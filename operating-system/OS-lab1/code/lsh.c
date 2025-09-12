@@ -138,7 +138,3 @@ void stripwhite(char *string)
 
   string[++i] = '\0';
 }
-
-void nothing(){
-    return 0;
-}
