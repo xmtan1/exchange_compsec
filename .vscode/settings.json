@@ -3,5 +3,6 @@
         "unordered_map": "c",
         "dirent.h": "c"
     },
-    "cmake.sourceDirectory": "/home/huyhoang-ph/msc-cybersecurity/operating-system/OS-lab1/code"
+    "cmake.sourceDirectory": "/home/huyhoang-ph/msc-cybersecurity/operating-system/OS-lab1/code",
+    "C_Cpp.errorSquiggles": "disabled"
 }

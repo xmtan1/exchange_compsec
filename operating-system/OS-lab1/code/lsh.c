@@ -60,6 +60,7 @@ int main(void)
       }
     }
 
+    // begin to process the command
     // Clear memory
     free(line);
   }

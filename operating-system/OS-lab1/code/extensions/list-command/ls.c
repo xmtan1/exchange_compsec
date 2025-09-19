@@ -3,8 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #define MAX_LEN 256
+#define OPT_HELP 1
+#define OPT_LONG 2
+#define OPT_ALL 3
+#define OPT_SORT 4
+#define SUPPORT_OPT 4
 
 // additional process for printing the dir_stream type
 // first, pick the 3 most common types: directory, file and symlink
@@ -21,13 +27,6 @@
  * @return: The letter to represent the directory type.
  */
 char additional_dir_type_process(unsigned char c);
-
-/**
- * This function is to handle the arguments passed to the program. Both long and short arguments are accepted.
- * @param: argc, argv
- * @return: print the help message or error is the input is not correct. Print the
- */
-int* parse_arguments(int argc, char *argv[]);
 
 /**
  * Collect the result into an array, sort them to make they're...more like the actual "ls".
@@ -67,30 +66,71 @@ void check_hidden(struct ls_entry *current_entry);
  * 
  * @return: print the content in the input directory to the stdout - or the screen.
  */
-void list(char argv[]);
+void list(char directory[], int arguments[]);
 
 int main(int argc, char *argv[]){
-    // a pointer to point to the array of char pointer argv
-    char** char_pointer = argv; // point to the beginning of this array
-    // parse the input to get arguments and directory
-    int* parse_result = parse_arguments(argc, argv);
-    // printf("The result of parsing the arguments: %d\n", parse_result);
-    // // a pointer points to a directory
-    // list(argv[1]);
-    // for (int i = 0; i < 2; i++){
-    //     printf("%d\t", parse_result[i]);
-    // }
-    // printf("\n");
+    int ret;
+    // possible option
+    char* options = "hlas";
+    int arguments[SUPPORT_OPT + 1];
+    
+    // check man page of getlong_opt man page
+    struct option longopts[] = {
+        {"help", no_argument, NULL, 'h'},
+        {"long", no_argument, NULL, 'l'},
+        {"all", no_argument, NULL, 'a'},
+        {"short", no_argument, NULL, 's'},
+        {NULL, 0, NULL, 0}
+    };
+    
+    while((ret = getopt_long(argc, argv, options, longopts, NULL)) != -1){
+        // printf("getopt_long returned: '%c' (%d).\n", ret, ret);
+        switch (ret){
+        case 'h':
+            printf("This is the help message for this program. This program\n");
+            printf("has somewhat similar feature as the list-ls UNIX command\n");
+            printf("Supported operator are: -h, -s, -l and -a.\n");
+            printf("-h --help:  print the help message for this program.\n");
+            printf("-l --long:  print each directory in one line with details.\n");
+            printf("-a --all:   print every directory, even they are hidden.\n");
+            printf("-s --sort:  sort the results in the alphabetical order.\n");
+            break;
+        case 'l':
+            // printf("Long option.\n");
+            arguments[OPT_LONG] = 1;
+            // printf("Command_OPT: %d\n", command_opt);
+            break;
+        case 'a':
+            // printf("Show hidden.\n");
+            arguments[OPT_ALL] = 1;
+            // printf("Command_OPT: %d\n", command_opt);
+            break;
+        case 's':
+            // printf("Sort allowed.\n");
+            arguments[OPT_SORT] = 1;
+            // printf("Command_OPT: %d\n", command_opt);
+            break;
+        case '?':
+            fprintf(stderr, "Unknown option: %c\n", optopt);
+            printf("Use -h or --help to see the help message.\n");
+            exit(EXIT_FAILURE);
+        default:
+            fprintf(stderr, "Error parsing options\n");
+            exit(EXIT_FAILURE);
+        }
+    }
 
-    // for (int i = 0; i < argc; i++){
-    //     printf("i: %d, argv[i]: %s\n", i, argv[i]);
-    // }
-    // extract the directory after parsing the arguments
-    char_pointer += parse_result[1];
-    char* res = *char_pointer;
-    // printf("%s\n", res);
-    list(res);
-    free(parse_result);
+    if(optind == argc){
+        printf("This program %s will print the content of current directory.\n", argv[0]);
+        list(NULL, arguments);
+    }
+    else{
+        // printf("non-listed arguments: ");
+        // printf("%s ", argv[optind++]);
+        // printf("\n");
+        list(argv[optind++], arguments);
+    }
+
     return 0;
 }
 
@@ -129,76 +169,6 @@ char additional_dir_type_process(unsigned char c){
     return ret;
 }
 
-int* parse_arguments(int argc, char *argv[]){
-    // will return an array, first element is the opt_result, indicate the arguments passed
-    // the second element is the position to read the actual command's parameter.
-    int* result_array = (int*)(malloc (2*sizeof(int)));
-    int opt_result = 0; // default is 0, no option was passed and the command will print the short list.
-    int param_postion = 1; // since the first position is for the program name, should count from 1.
-    // debug message, comment it when testing for ... less text printed
-    /*     printf("The number of the arguments passed: %d\n", argc);
-    for (int i = 0; i < argc; i++){
-        printf("Argument %d: %s\n", i, argv[i]);
-    } */
-
-    // begin to parse the arguments
-    int opt;
-    int flag = 0;
-    while ((opt = getopt(argc, argv, "lah")) != -1)
-    {
-        switch (opt)
-        {
-        case 'h':
-            printf("This command is used to list information about the directory, default is listing the current directory or the directory you passed to this command.\n");
-            printf("Usage: %s [-l] [-a] [-h]\n", argv[0]);
-            printf("  -l           Use a long listing format\n");
-            printf("  -a           Include directory entries whose names begin with a dot (.) - or a hidden one.\n");
-            printf("  -h           Display this help message\n");
-            flag = 1;
-            exit(EXIT_SUCCESS);
-        case 'l':
-            // long listing format
-            // debug message
-            // printf("Long listing format...\n");
-            opt_result += 1;
-            flag = 1;
-            break;
-        case 'a':
-            // include the hidden file and the parent directory
-            // debug message
-            // printf("Including hidden files...\n");
-            opt_result += 2;
-            flag = 1;
-            break;
-        case '?':
-            fprintf(stderr, "Unknown option: %c\n", optopt);
-            printf("Use -h to see the help message.\n");
-            exit(EXIT_FAILURE);
-        default:
-            fprintf(stderr, "Error parsing options\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    param_postion += flag;
-
-    // scan all for all arguments passed
-    // if (optind < argc)
-    // {
-    //     printf("Positional arguments:\n");
-    //     for (int i = optind; i < argc; i++)
-    //     {
-    //         printf(" %s\n", argv[i]);
-    //     }
-    // }
-
-    // debug message
-    // printf("The result of parsing the arguments: %d\n", opt_result);
-    result_array[0] = opt_result;
-    result_array[1] = param_postion;
-    return result_array;
-}
-
 int cmp(const void *p1, const void *p2){
     const struct ls_entry *ls_entry_1 = p1;
     const struct ls_entry *ls_entry_2 = p2;
@@ -218,15 +188,15 @@ int cmp(const void *p1, const void *p2){
     return strcmp(ls_entry_1->name, ls_entry_2->name);
 }
 
-void list(char argv[]){
+void list(char directory[], int arguments[]){
     DIR *dir_stream;
     struct dirent *dir_read; // hold the "current result of dir stream"
     struct ls_entry *entries = NULL;
     size_t size_of_entries = 0;
 
     // check the passed argument first
-    if (argv != NULL){
-        dir_stream = opendir(argv);
+    if (directory != NULL){
+        dir_stream = opendir(directory);
     }
     else {
         dir_stream = opendir(".");
@@ -262,17 +232,41 @@ void list(char argv[]){
         exit(EXIT_FAILURE);
     }
 
+    if(arguments[OPT_SORT] == 1){
+        // printf("Sort is selected...\n");
+        qsort(entries, size_of_entries, sizeof(struct ls_entry), cmp);
+    }
     // sort the whole result array
-    qsort(entries, size_of_entries, sizeof(struct ls_entry), cmp);
-
-    // normally, we should hide the "." and ".." or any directory begin with .
-    // the most primitive of using "hidden"
-    for(int i = 0; i < size_of_entries; i++){
-        if (entries[i].is_hidden != 1){
-            // printf("Will be printed...\n");
-            printf("%c\t%s\t\t\t%ld bytes\n", entries[i].type, entries[i].name, entries[i].size);
+    if (arguments[OPT_LONG] == 1){
+        // printf("Show details...\n");
+        for(int i = 0; i < size_of_entries; i++){
+            if(arguments[OPT_ALL] == 1){
+                // printf("Show hidden files...\n");
+                printf("%c\t%s\t%ld bytes\n", entries[i].type, entries[i].name, entries[i].size);
+            }
+            else{
+                if(entries[i].is_hidden == 1)
+                    continue;
+                printf("%c\t%s\t%ld bytes\n", entries[i].type, entries[i].name, entries[i].size);
+            }
         }
     }
 
+    // normal behavior, print just filename in one line
+    for(int i = 0; i < size_of_entries; i++){   
+        if (arguments[OPT_ALL] == 1){
+            // printf("Show hidden files...\n");
+            printf("%s ", entries[i].name);
+        }
+        else{
+            if(entries[i].is_hidden == 1)
+                continue;
+            printf("%s ", entries[i].name);
+        }
+    }
+    printf("\n");
+
     free(entries);
+
+    return;
 }
