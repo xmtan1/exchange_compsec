@@ -38,17 +38,33 @@
 static void print_cmd(Command *cmd);
 static void print_pgm(Pgm *p);
 void stripwhite(char *);
+int resolve_cmd(const char* command_path, char* processed_path, size_t max_len);
 
-int main(void)
-{
-  // test for detecting "PATH"
-  // const char* env_path;
-  // env_path = getenv("PATH");
-  // printf("PATH :%s\n", (env_path != NULL) ? env_path : "getenv returned NULL");
+
+// a pointer array to store custom libs
+char* custom_libs[MAX_LEN] = {
+    "/home/huyhoang-ph/msc-cybersecurity/operating-system/OS-lab1/code/lib_x64",
+    NULL
+};
+
+int main(void){ 
+  // declare a command to process later, depended on background or not
   Command to_process;
+  // prompt current working directory for debug with native cd command
+  // if directory changes happened later, will modified in the below code
+  char cwd[MAX_LEN + 1];
+  
+  for (;;){
+    if(getcwd(cwd, sizeof(cwd))== NULL){
+      perror("getcwd() error");
+      return -1;
+    }
 
-  for (;;)
-  {
+    // for (int i = 0; custom_libs[i] != NULL; i++){
+    //   printf("Custom lib path %d: %s\n", i, custom_libs[i]);
+    // }
+
+    // printf("%s \n", cwd);
     char *line;
     line = readline("> ");
 
@@ -101,6 +117,12 @@ int main(void)
         continue;
       }
 
+      if(strcmp(*(p->pgmlist), "pwd") == 0){
+        printf("%s \n", cwd);
+        p = p->next;
+        continue;
+      }
+
       pid_t pid = fork();
       
       if (pid < 0){
@@ -110,7 +132,15 @@ int main(void)
       }
 
       if(pid == 0){
-        execvp(p->pgmlist[0], p->pgmlist);
+        char command_path[MAX_LEN];
+        if(resolve_cmd(p->pgmlist[0], command_path, sizeof(command_path)) != 0){
+          fprintf(stderr, "Command not found: %s\n", p->pgmlist[0]);
+          exit(EXIT_FAILURE);
+        }
+
+        // printf("Executing command: %s\n", command_path);
+
+        execv(command_path, p->pgmlist);
         perror("exec failed");
         exit(EXIT_FAILURE);
       }
@@ -200,3 +230,30 @@ void stripwhite(char *string)
 
   string[++i] = '\0';
 }
+
+/**
+ * Hanlde passing path of a filename, with a backup is pointer to the custom libs path
+ * @param lib_paths: a pointer array of library paths
+ * @return the first valid library path, or NULL if none found
+ */
+int resolve_cmd(const char* command_path, char* processed_path, size_t max_len){
+  // check if the command path is appropriate (with slash /)
+  if (strchr(command_path, '/')){
+    if(access(command_path, X_OK) == 0){
+      strcpy(processed_path, command_path);
+      return 0;
+    }
+  }
+
+  // if the command path is not appropriate, check in the custom libs
+  for (int i = 0; custom_libs[i] != NULL; i++){
+    // pass the command path to the custom lib
+    snprintf(processed_path, max_len, "%s/%s", custom_libs[i], command_path);
+    if(access(processed_path, X_OK) == 0){
+      return 0;
+    }
+  }
+
+  return -1;
+}
+

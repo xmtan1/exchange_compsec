@@ -94,7 +94,7 @@ int main(int argc, char *argv[]){
             printf("-l --long:  print each directory in one line with details.\n");
             printf("-a --all:   print every directory, even they are hidden.\n");
             printf("-s --sort:  sort the results in the alphabetical order.\n");
-            break;
+            exit(EXIT_SUCCESS);
         case 'l':
             // printf("Long option.\n");
             arguments[OPT_LONG] = 1;
