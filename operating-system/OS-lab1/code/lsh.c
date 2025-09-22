@@ -53,6 +53,15 @@ int main(void){
   // prompt current working directory for debug with native cd command
   // if directory changes happened later, will modified in the below code
   char cwd[MAX_LEN + 1];
+
+  // recognize the PATH environment variable
+  char* path_env = getenv("PATH");
+  if(path_env != NULL){
+    printf("PATH environment variable: %s\n", path_env);
+  }
+  else{
+    printf("PATH environment variable not found.\n");
+  }
   
   for (;;){
     if(getcwd(cwd, sizeof(cwd))== NULL){
@@ -103,7 +112,7 @@ int main(void){
 
       // handle exit first
       if (strcmp(*(p->pgmlist), "exit") == 0){
-        // printf("Exit command detected, terminating the shell.\n");
+        printf("Exit command detected, terminating the shell.\n");
         free(line);
         return 0;
       }
@@ -117,8 +126,32 @@ int main(void){
         continue;
       }
 
+      // for debugging purpose - chdir command
       if(strcmp(*(p->pgmlist), "pwd") == 0){
         printf("%s \n", cwd);
+        p = p->next;
+        continue;
+      }
+
+    if (strcmp(*(p->pgmlist), "cd") == 0) {
+        // if no argument, go to home directory
+        if (p->pgmlist[1] == NULL) {
+          char *home_dir = getenv("HOME");
+          if (home_dir != NULL) {
+            if (chdir(home_dir) != 0) {
+                perror("chdir to HOME failed");
+            }
+          } 
+          else {
+            fprintf(stderr, "HOME environment variable not set.\n");
+          }
+        } 
+        else {
+          // go to the passed directory
+          if (chdir(p->pgmlist[1]) != 0)
+            perror("chdir failed");
+        }
+
         p = p->next;
         continue;
       }
