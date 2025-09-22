@@ -1,7 +1,8 @@
 {
     "files.associations": {
         "unordered_map": "c",
-        "dirent.h": "c"
+        "dirent.h": "c",
+        "wait.h": "c"
     },
     "cmake.sourceDirectory": "/home/huyhoang-ph/msc-cybersecurity/operating-system/OS-lab1/code",
     "C_Cpp.errorSquiggles": "disabled",

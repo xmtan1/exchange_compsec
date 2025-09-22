@@ -38,43 +38,51 @@
 static void print_cmd(Command *cmd);
 static void print_pgm(Pgm *p);
 void stripwhite(char *);
-void cd_builtin(char *path);
-void exit_builtin(char* line);
 
-// define a process structure to keep tracking foreground, background and child processes
+// a pointer array to store custom libs
+// char* custom_libs[MAX_LEN] = {
+//     "/home/huyhoang-ph/msc-cybersecurity/operating-system/OS-lab1/code/lib_x64",
+//     NULL
+// };
 
-struct job {
-    pid_t pid; // job id
-    char cmd[MAX_LEN + 1]; // the command of this job
-    int status; // 0: running, 1: stopped and 2: terminated (by the Crtl + C).
-    struct job* next; // pointer to the next job in the list (for the piped commands)
-};
-
-void create_new_job(struct job* parent, char* command){
-  
-}
+// char* path_env[MAX_LEN + 1]; // global PATH variables, navigate this shell to know where to find the commands
 
 int main(void){ 
   // declare a command to process later, depended on background or not
   Command to_process;
+  // prompt current working directory for debug with native cd command
+  // if directory changes happened later, will modified in the below code
+  // char cwd[MAX_LEN + 1];
 
-  struct job lsh_jobs; // the job list for this terminal session
-  lsh_jobs.pid = getpid();
-  strcpy(lsh_jobs.cmd, "./buid/lsh");
-  lsh_jobs.status = 0; // running
-  lsh_jobs.next = NULL;
+  // recognize the PATH environment variable
+  // char* path_env = getenv("PATH");
+  // if(path_env != NULL){
+  //   printf("PATH environment variable: %s\n", path_env);
+  // }
+  // else{
+  //   printf("PATH environment variable not found.\n");
+  // }
   
   for (;;){
+    // // get the current working directory, for debug
+    // if(getcwd(cwd, sizeof(cwd))== NULL){
+    //   perror("getcwd() error");
+    //   return -1;
+    // }
+
+    // for (int i = 0; custom_libs[i] != NULL; i++){
+    //   printf("Custom lib path %d: %s\n", i, custom_libs[i]);
+    // }
+
+    // printf("%s \n", cwd);
     char *line;
     line = readline("> ");
 
-    // debug message
-    // printf("lsh shell process ID: %d\n", lsh_jobs.pid);
-    // printf("lsh invoked command: %s\n", lsh_jobs.cmd);
-
     // handle EOF - Ctrl + D signal
     if(line == NULL){
-      exit_builtin(line);
+      printf("End of file - EOF detected, quit the program.\n");
+      free(line);
+      return 0;
     }
 
     // Remove leading and trailing whitespace from the line
@@ -105,11 +113,48 @@ int main(void){
 
       // handle exit first
       if (strcmp(*(p->pgmlist), "exit") == 0){
-        exit_builtin(line);
+        printf("Exit command detected, terminating the shell.\n");
+        free(line);
+        return 0;
       }
 
-      if (strcmp(*(p->pgmlist), "cd") == 0) {
-        cd_builtin(p->pgmlist[1]);
+      // // handle built-in command of clear
+      // if (strcmp(*(p->pgmlist), "clear") == 0){
+      //   // system("clear"); // use system call to clear the terminal
+      //   // Or use ANSI escape codes to clear the terminal
+      //   printf("\033[H\033[J");
+      //   p = p->next;
+      //   continue;
+      // }
+
+      // // for debugging purpose - chdir command
+      // if(strcmp(*(p->pgmlist), "pwd") == 0){
+      //   printf("%s \n", cwd);
+      //   p = p->next;
+      //   continue;
+      // }
+
+    if (strcmp(*(p->pgmlist), "cd") == 0) {
+        // if no argument, go to home directory
+        // debug message
+        printf("Using the built-in cd command\n");
+        if (p->pgmlist[1] == NULL) {
+          char *home_dir = getenv("HOME");
+          if (home_dir != NULL) {
+            if (chdir(home_dir) != 0) {
+                perror("chdir to HOME failed");
+            }
+          } 
+          else {
+            fprintf(stderr, "HOME environment variable not set.\n");
+          }
+        } 
+        else {
+          // go to the passed directory
+          if (chdir(p->pgmlist[1]) != 0)
+            perror("chdir failed");
+        }
+
         p = p->next;
         continue;
       }
@@ -216,43 +261,28 @@ void stripwhite(char *string)
 }
 
 /**
- * Handle the built-in cd command to change the current working directory.
- * If path is NULL, change to the home directory.
- * If path is invalid, print an error message.
- * @param path The target directory path.
- * @return void (the working directory is changed by chdir() command, can use getcwd() to verify)
+ * Hanlde passing path of a filename, with a backup is pointer to the custom libs path
+ * @param lib_paths: a pointer array of library paths
+ * @return the first valid library path, or NULL if none found
  */
-void cd_builtin(char *path) {
-    // if no argument, go to home directory
-    // debug message to make sure this shell used the buitl-in, not the executable from PATH
-    // printf("Using the built-in cd command\n");
-    if (path == NULL) {
-      char *home_dir = getenv("HOME");
-      if (home_dir != NULL) {
-        if (chdir(home_dir) != 0) {
-          perror("chdir to HOME failed");
-        }
-      } 
-      else {
-        fprintf(stderr, "HOME environment variable not set.\n");
-      }
-    } 
-    
-    else {
-      // go to the passed directory
-          if (chdir(path) != 0)
-            perror("chdir failed");
-    }
-  }
+// int resolve_cmd(const char* command_path, char* processed_path, size_t max_len){
+//   // check if the command path is appropriate (with slash /)
+//   if (strchr(command_path, '/')){
+//     if(access(command_path, X_OK) == 0){
+//       strcpy(processed_path, command_path);
+//       return 0;
+//     }
+//   }
 
-/**
- * Exit handler for the built-in exit command.
- * This command can be achieved by two means: EOF signal (Crtl + D) of exit itself in the shell.
- * @param: A character pointer to the output that the shell is currently handeling.
- * @return: void (the program will terminate in the main function after calling this)
- */
-void exit_builtin(char* line){ 
-    printf("Exit command detected, terminating the shell.\n");
-    free(line);
-    exit(0);
-  }
+//   // if the command path is not appropriate, check in the custom libs
+//   for (int i = 0; path_env[i] != NULL; i++){
+//     // pass the command path to the custom lib
+//     snprintf(processed_path, max_len, "%s/%s", path_env[i], command_path);
+//     if(access(processed_path, X_OK) == 0){
+//       return 0;
+//     }
+//   }
+
+//   return -1;
+// }
+
