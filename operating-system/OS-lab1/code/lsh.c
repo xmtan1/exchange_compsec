@@ -30,7 +30,8 @@
 // Allow the used of several system-related calls
 #include <sys/types.h>
 #include <sys/wait.h>
-#include<signal.h>
+#include <signal.h>
+#include <termios.h>
 
 #include "parse.h"
 
@@ -91,10 +92,16 @@ void signal_child_handler(int singal_number){
       if (job_table[i]->pid == child_pid){
         job_table[i]->status = 2; // exit (success)
         printf("\n[BG] Job is finished, pid: %d\n", child_pid);
+        
+        rl_on_new_line();      // go to new line
+        rl_replace_line("", 0); // clear current input line
+        rl_redisplay();        // redisplay prompt
         break;
       }
     }
   }
+
+  fflush(stdout);
 }
 
 void foreground_sig_handler(int signal_number){
@@ -102,52 +109,80 @@ void foreground_sig_handler(int signal_number){
         kill(fg_pid, SIGINT);
         printf("\n[FG] Process %d terminated by Ctrl+C\n", fg_pid);
         fg_pid = 0;  // reset
-    } else {
+    } 
+    else {
         printf("\n");  // no foreground job, just print newline
         fflush(stdout); // make sure newline shows immediately
     }
 }
 
-int main(void){ 
-  // declare a command to process later, depended on background or not
-  Command to_process;
+// handle the main "shell"
+pid_t shell_pid;
+struct termios current_shell;
+int shell_terminal;
+int shell_interactive;
+
+void init_shell(){
+  // handler the shell and gives its own group pid
+  shell_terminal = STDIN_FILENO;
+  shell_interactive = isatty(shell_terminal);
+
+  if(shell_interactive){
+    while(tcgetpgrp(shell_terminal) != (shell_pid = getpgrp())){
+      kill(-shell_pid, SIGTTIN);
+    }
+  }
+
+  signal(SIGINT, SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+  signal(SIGTSTP, SIG_IGN);
+  signal(SIGTTIN, SIG_IGN);
+  signal(SIGTTOU, SIG_IGN);
+
+  shell_pid = getpid();
+  if(setpgid(shell_pid, shell_pid) < 0){
+    perror("The shell could not be put in its own group");
+    exit(1);
+  }
+
+  tcsetpgrp(shell_terminal, shell_pid);
+
+  tcgetattr(shell_terminal, &current_shell);
+}
+
+int main(void){
+  // load the handler for child process and Ctrl + C case
   signal(SIGCHLD, signal_child_handler);
   signal(SIGINT, foreground_sig_handler);
 
-  // allocated the 0 position for this shell
+  init_shell();
 
-  // debug message
-  
   for (;;){
     char *line;
     line = readline("> ");
 
-    // debug message
-    // printf("lsh shell process ID: %d\n", lsh_jobs.pid);
-    // printf("lsh invoked command: %s\n", lsh_jobs.cmd);
-
     // handle EOF - Ctrl + D signal
     if(line == NULL){
+      printf("Invoked by EOF signal.\n");
       exit_builtin(line);
     }
 
     // Remove leading and trailing whitespace from the line
     stripwhite(line);
 
+    // declare a command to process later, depended on background or not
+    Command to_process;
+    memset(&to_process, 0, sizeof(Command));
+
     // If stripped line not blank
-    if (*line)
-    {
+    if (*line){
       add_history(line);
 
       Command cmd;
-      if (parse(line, &cmd) == 1)
-      {
-        // Just prints cmd
-        // print_cmd(&cmd);
+      if (parse(line, &cmd) == 1){
         to_process = cmd;
       }
-      else
-      {
+      else{
         printf("Parse ERROR\n");
       }
     }
@@ -155,10 +190,9 @@ int main(void){
     // begin to process the command
     Pgm *p = to_process.pgm;
     while (p != NULL){
-      // printf("Current command to execute: %s\n", *(p->pgmlist));
-
       // handle exit first
       if (strcmp(*(p->pgmlist), "exit") == 0){
+        printf("Invoked by built-in exit command.\n");
         exit_builtin(line);
       }
 
@@ -176,40 +210,50 @@ int main(void){
         return -1;
       }
 
-      if(pid == 0){
-        // child process handler
+      if(pid == 0){ // child
+        setpgid(0, 0); // set the child to be the leader of its tree
+        if(!to_process.background){
+          tcsetpgrp(STDIN_FILENO, getpid());
+        }
+
         if(execvp(*(p->pgmlist), p->pgmlist) == -1){
           perror("lsh, exec failed");
+          _exit(1);
         };
       }
 
       else{
         // handle with parent, add the child to the list and tracking its progress
         // should point to the BEGINNING of the array pgmlist
+        setpgid(pid, pid);
         job* new_job = create_job(pid, p);
-        // debug
-        // print_job(new_job);
+
         if(to_process.background == 1){
           printf("[BG] Job started: pid=%d, cmd=", pid);
           print_pgm(p);
         }
-        else{
-          //foreground process
-          fg_pid = pid;
-          waitpid(pid, NULL, 0);
-          new_job->status=2; // and manually marked it as completed
-          // fg_pid = 0;
+
+        else{ //foreground process
+          tcsetpgrp(STDIN_FILENO, pid);
+          // set the group to, both FG and BG should be like that
+          int status;
+          waitpid(pid, &status, WUNTRACED);
+
+          tcsetpgrp(STDIN_FILENO, shell_pid);
+
+          if(WIFEXITED(status) || WIFSIGNALED(status)){
+            new_job->status = 2;
+          }
+          else if (WIFSTOPPED(status))
+            new_job->status = 1;
         }
       }
 
       p = p->next;
     }
-    
-
     // Clear memory
     free(line);
   }
-  
   return 0;
 }
 
