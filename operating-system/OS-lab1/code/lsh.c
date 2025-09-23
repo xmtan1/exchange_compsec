@@ -46,6 +46,8 @@ void exit_builtin(char *line);
 void fg_handler();
 void child_handler();
 
+void check_job();
+
 typedef struct t_job{
   pid_t job_pid;
 } job;
@@ -143,6 +145,8 @@ int main(void)
 
           printf("[BG] Job started with pid %d, cmd= ", pid);
           print_pgm(p);
+
+          check_job();
         }
         else{
           fg_pid = pid;
@@ -311,5 +315,12 @@ void child_handler(){
     rl_on_new_line();
     rl_replace_line("", 0);
     rl_redisplay();
+    check_job();
+  }
+}
+
+void check_job(){
+  for(int i = 0; i < background_jobs_count; i++){
+    printf("Job %d - pid: %d\n", i, background_jobs[i].job_pid);
   }
 }
