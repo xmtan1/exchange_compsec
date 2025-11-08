@@ -20,6 +20,8 @@ import (
 
 const MAX_CONNECTION = 10
 const MAX_TIMEOUT = 5
+const staticDir = "static"
+const uploadDir = "uploads"
 
 var supportedTypes = map[string]string{
 	".html": "text/html",
@@ -119,7 +121,6 @@ func (s *server) handleConnection(conn net.Conn) {
 }
 
 func (s *server) handleGet(conn net.Conn, req *http.Request) {
-	const staticDir = "static"
 	path := filepath.Join(staticDir, filepath.Clean(req.URL.Path))
 
 	if !strings.HasPrefix(path, staticDir) {
@@ -169,8 +170,6 @@ func (s *server) handleGet(conn net.Conn, req *http.Request) {
 }
 
 func (s *server) handlePost(conn net.Conn, req *http.Request) {
-	const uploadDir = "uploads"
-
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		if err := os.Mkdir(uploadDir, 0755); err != nil {
 			log.Printf("Internal error while creating storage: %v", err)
@@ -293,6 +292,8 @@ func (s *server) proxyHandleConnection(conn net.Conn) {
 func (s *server) Start(isProxyMode bool) {
 	s.wg.Add(1)
 	go s.acceptConnections()
+
+	os.Symlink(uploadDir, staticDir)
 
 	s.wg.Add(MAX_CONNECTION)
 	for i := 0; i < MAX_CONNECTION; i++ {
