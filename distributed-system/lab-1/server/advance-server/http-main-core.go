@@ -170,6 +170,7 @@ func (s *server) handleGet(conn net.Conn, req *http.Request) {
 
 func (s *server) handlePost(conn net.Conn, req *http.Request) {
 	const uploadDir = "uploads"
+
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		if err := os.Mkdir(uploadDir, 0755); err != nil {
 			log.Printf("Internal error while creating storage: %v", err)
@@ -215,7 +216,6 @@ func (s *server) handlePost(conn net.Conn, req *http.Request) {
 
 	// Body
 	fmt.Fprintln(conn, "File successfully uploaded.")
-
 }
 
 func (s *server) handleError(conn net.Conn, statusCode int) {
