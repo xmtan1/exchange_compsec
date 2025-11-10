@@ -214,7 +214,7 @@ func (s *server) handlePost(conn net.Conn, req *http.Request) {
 	fmt.Fprintf(conn, "\r\n")
 
 	// Body
-	fmt.Fprintln(conn, "File successfully uploaded.")
+	fmt.Fprintf(conn, "File successfully uploaded.\n")
 }
 
 func (s *server) handleError(conn net.Conn, statusCode int) {

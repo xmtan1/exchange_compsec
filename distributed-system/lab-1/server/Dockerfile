@@ -14,6 +14,7 @@ RUN addgroup -S application && adduser -S application -G application
 WORKDIR /app
 
 COPY --from=base-go --chown=application:application /usr/src/app/advance-server/advance-server .
+RUN chown -R application:application /app
 USER application
 
 # ENTRYPOINT [ "/bin/advance-server" ]
