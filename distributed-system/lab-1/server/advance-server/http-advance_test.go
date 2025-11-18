@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/http/httptest" // We need this to create a fake backend
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -15,8 +15,6 @@ import (
 	"time"
 )
 
-// TestMain sets up our test environment (e.g., creating files to GET)
-// [This is mostly from your http-server_test.go]
 func TestMain(m *testing.M) {
 	// Create a dummy 'static' directory
 	if err := os.MkdirAll("static", 0755); err != nil {
@@ -41,9 +39,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// --- HELPER FUNCTIONS ---
-
-// startTestServer now takes a boolean to start in the correct mode
 func startTestServer(t *testing.T, isProxy bool) (addr string, stop func()) {
 	s, err := newServer(":0") //
 	if err != nil {
@@ -61,7 +56,6 @@ func startTestServer(t *testing.T, isProxy bool) (addr string, stop func()) {
 	return addr, stop
 }
 
-// sendRequest is the same helper from your test file
 func sendRequest(t *testing.T, addr, requestStr string) string {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -80,15 +74,10 @@ func sendRequest(t *testing.T, addr, requestStr string) string {
 	return string(respBytes)
 }
 
-// --- BASIC SERVER TESTS (WEB SERVER MODE) ---
-
-// TestWebServerMode groups all tests for the basic web server
 func TestWebServerMode(t *testing.T) {
-	// Start the server in WEB SERVER mode (isProxy=false)
 	addr, stop := startTestServer(t, false)
 	defer stop()
 
-	// Run all web server tests as sub-tests
 	t.Run("GET_OK", func(t *testing.T) {
 		req := "GET /index.html HTTP/1.1\r\nHost: test\r\n\r\n"
 		resp := sendRequest(t, addr, req)
@@ -136,7 +125,7 @@ func TestWebServerMode(t *testing.T) {
 	})
 
 	t.Run("ConcurrencyLimit", func(t *testing.T) {
-		numClients := 15 // More than MAX_CONNECTION
+		numClients := 15 // Larger than max connections
 		var wg sync.WaitGroup
 		wg.Add(numClients)
 		startTime := time.Now()
@@ -160,25 +149,18 @@ func TestWebServerMode(t *testing.T) {
 	})
 }
 
-// --- ADVANCED SERVER TESTS (PROXY MODE) ---
-
-// TestProxyMode groups all tests for the advanced proxy
 func TestProxyMode(t *testing.T) {
-	// 1. Start a FAKE BACKEND web server (to act as our destination)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			time.Sleep(1 * time.Second) // Simulate 1s of work
+			time.Sleep(1 * time.Second)
 			fmt.Fprintln(w, "Hello from the backend!")
 		}
 	}))
 	defer backend.Close()
 	backendURL, _ := url.Parse(backend.URL)
 
-	// 2. Start OUR server in PROXY mode (isProxy=true)
 	proxyAddr, stop := startTestServer(t, true)
 	defer stop()
-
-	// --- Run all proxy tests as sub-tests ---
 
 	t.Run("ProxyGET_OK", func(t *testing.T) {
 		req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", backendURL.Host)
@@ -202,7 +184,7 @@ func TestProxyMode(t *testing.T) {
 	})
 
 	t.Run("ProxyConcurrencyLimit", func(t *testing.T) {
-		numClients := 15 // More than MAX_CONNECTION
+		numClients := 15
 		var wg sync.WaitGroup
 		wg.Add(numClients)
 		startTime := time.Now()
@@ -216,7 +198,7 @@ func TestProxyMode(t *testing.T) {
 		}
 		wg.Wait()
 		totalDuration := time.Since(startTime)
-		minExpectedTime := 2 * time.Second // 15 clients * 1s work / 10 workers
+		minExpectedTime := 2 * time.Second
 
 		if totalDuration < minExpectedTime {
 			t.Errorf("Proxy connection limit was NOT respected! "+
