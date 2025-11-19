@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const timeOutCoefficient = 10
+
 var (
 	unstarted  Status = "unstarted"
 	inprogress Status = "inprogress"
@@ -140,9 +142,9 @@ func (c *Coordinator) Rescheduler() {
 				status := c.mapTasks[task].status
 				if status == inprogress {
 					different := currentTime.Sub(startTime)
-					if different > 10 {
+					if different > timeOutCoefficient*time.Second {
 						// if the task was running too long, assume that we have 10
-						log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, mapType)
+						// log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, mapType)
 						c.mapTasks[task].status = unstarted
 						c.cond.Broadcast() // signal the GetTask function, the Wait() function
 					}
@@ -156,8 +158,8 @@ func (c *Coordinator) Rescheduler() {
 				status := c.reduceTasks[task].status
 				if status == inprogress {
 					different := currentTime.Sub(startTime)
-					if different > 10 {
-						log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, reduceType)
+					if different > timeOutCoefficient*time.Second { // double check for the time, if not specified the second -> take nanosecond -> extremely fast -> create redundant tasks
+						// log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, reduceType)
 						c.reduceTasks[task].status = unstarted
 						c.cond.Broadcast()
 					}

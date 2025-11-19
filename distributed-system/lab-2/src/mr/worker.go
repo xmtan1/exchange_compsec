@@ -136,12 +136,23 @@ func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) strin
 		}
 		file.Close()
 
+		// this split string got an error of unexpected EOF in test (wc test)
 		kvstrings := strings.Split(string(content), "\n")
-		kv := KeyValue{}
-		for _, kvstring := range kvstrings[:len(kvstrings)-1] {
-			err := json.Unmarshal([]byte(kvstring), &kv)
+		// kv := KeyValue{}
+		for _, kvstring := range kvstrings {
+			// trimmed the whitespace, end character,...
+			trimmed := strings.TrimSpace(kvstring)
+			if len(trimmed) == 0 {
+				// skip empty line
+				continue
+			}
+			kv := KeyValue{} // allow the kv to get rid of garbage values
+			err := json.Unmarshal([]byte(trimmed), &kv)
 			if err != nil {
 				log.Fatalf("Cannot unmarshal %v, error %s", filename, err)
+				// weaker error catching logic
+				// log.Printf("Warning: Cannot unmarshal line: %q, error: %v", trimmed, err)
+				// continue
 			}
 			data = append(data, kv)
 		}
@@ -205,7 +216,7 @@ func CallGetTask() (*GetTaskReply, error) {
 	ok := call("Coordinator.GetTask", &args, &reply)
 	if ok {
 		// get response success
-		fmt.Printf("reply.Name '%v', reply.Type '%v'\n", reply.Name, reply.Type)
+		// fmt.Printf("reply.Name '%v', reply.Type '%v'\n", reply.Name, reply.Type)
 		return &reply, nil
 	} else {
 		// some errors happened
