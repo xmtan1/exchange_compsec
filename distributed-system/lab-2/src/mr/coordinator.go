@@ -66,7 +66,7 @@ func (c *Coordinator) GetReduceTask() (string, int) {
 	return "Null", -1
 }
 
-// get task reply
+// get task reply (for worker called to coordinator)
 func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	c.cond.L.Lock() // lock the conditional variable when accessing shared variable
 	// check map task

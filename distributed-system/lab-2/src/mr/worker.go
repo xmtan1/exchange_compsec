@@ -2,6 +2,7 @@ package mr
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -164,27 +165,59 @@ func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) strin
 // example function to show how to make an RPC call to the coordinator.
 //
 // the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
+// func CallExample() {
 
-	// declare an argument structure.
-	args := ExampleArgs{}
+// 	// declare an argument structure.
+// 	args := ExampleArgs{}
 
-	// fill in the argument(s).
-	args.X = 99
+// 	// fill in the argument(s).
+// 	args.X = 99
 
-	// declare a reply structure.
-	reply := ExampleReply{}
+// 	// declare a reply structure.
+// 	reply := ExampleReply{}
 
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
-	ok := call("Coordinator.Example", &args, &reply)
+// 	// send the RPC request, wait for the reply.
+// 	// the "Coordinator.Example" tells the
+// 	// receiving server that we'd like to call
+// 	// the Example() method of struct Coordinator.
+// 	ok := call("Coordinator.Example", &args, &reply)
+// 	if ok {
+// 		// reply.Y should be 100.
+// 		fmt.Printf("reply.Y %v\n", reply.Y)
+// 	} else {
+// 		fmt.Printf("call failed!\n")
+// 	}
+// }
+
+// function call to get a task from coordinator
+func CallGetTask() (*GetTaskReply, error) {
+	args := GetTaskArgs{}
+	reply := GetTaskReply{}
+
+	ok := call("Coordinator.GetTask", &args, &reply)
 	if ok {
-		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
+		// get response success
+		fmt.Printf("reply.Name '%v', reply.Type '%v'\n", reply.Name, reply.Type)
+		return &reply, nil
 	} else {
-		fmt.Printf("call failed!\n")
+		// some errors happened
+		return nil, errors.New("Call failed")
+	}
+}
+
+// function to update a task status (done, timeout,...)
+func CallUpdateTaskStatus(tasktype TaskType, name string) error {
+	args := UpdateTaskStatusArgs{
+		Name: name,
+		Type: tasktype,
+	}
+
+	reply := UpdateTaskStatusReply{}
+	ok := call("Coordinator.UpdateTaskStatus", &args, &reply)
+	if ok {
+		return nil
+	} else {
+		return errors.New("Call failed")
 	}
 }
 
@@ -205,6 +238,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	fmt.Println(err)
+	// fmt.Println(err)
+	log.Fatalf(err.Error())
 	return false
 }
