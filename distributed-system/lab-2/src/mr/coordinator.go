@@ -51,7 +51,7 @@ func (c *Coordinator) GetMapTask() (string, int) {
 			return task, c.mapTasks[task].number
 		}
 	}
-	return "Null", -1
+	return "", -1
 }
 
 // get reduce task
@@ -63,7 +63,7 @@ func (c *Coordinator) GetReduceTask() (string, int) {
 			return task, c.reduceTasks[task].number
 		}
 	}
-	return "Null", -1
+	return "", -1
 }
 
 // get task reply (for worker called to coordinator)
@@ -71,7 +71,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	c.cond.L.Lock() // lock the conditional variable when accessing shared variable
 	// check map task
 	if c.mapRemaining != 0 {
-		// check if we still have map task
+		// check if we still have map task in the queue
 		mapTask, numberOfMapTask := c.GetMapTask()
 		for mapTask == "" { // the queue is empty
 			if c.mapRemaining == 0 { // no job
@@ -96,7 +96,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 		for reduceTask == "" {
 			if c.reduceRemaining == 0 {
 				c.cond.L.Unlock()
-				return errors.New("All tasks are completed, no more remaining.")
+				return errors.New("all tasks are completed, no more remaining")
 			}
 			c.cond.Wait()
 			reduceTask, numberOfReduceTask = c.GetReduceTask()
@@ -110,7 +110,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	}
 
 	c.cond.L.Unlock()
-	return errors.New("All tasks are completed, no more remaining.")
+	return errors.New("all tasks are completed, no more remaining")
 }
 
 // update the status for map or reduce task
@@ -177,12 +177,13 @@ func (c *Coordinator) Rescheduler() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
+	ret := false
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 	if c.reduceRemaining == 0 {
 		return true
 	}
-	return false
+	return ret
 }
 
 // start a thread that listens for RPCs from worker.go

@@ -50,7 +50,14 @@ func Worker(mapf func(string, string) []KeyValue,
 		if err != nil {
 			log.Fatal(err)
 		}
-
+		if rep.Type == mapType {
+			// if get a map task, execute then call update
+			ExecuteMapTask(rep.Name, rep.Number, rep.PartitionNumber, mapf)
+			CallUpdateTaskStatus(mapType, rep.Name)
+		} else {
+			ExecuteReduceTask(rep.Number, reducef)
+			CallUpdateTaskStatus(reduceType, rep.Name)
+		}
 	}
 }
 
@@ -103,7 +110,8 @@ func ExecuteMapTask(filename string, mapNumber, numberofReduce int, mapf func(st
 			}
 		}
 		kvj, _ := json.Marshal(kv)
-		fmt.Fprint(f, "%s\n", kvj)
+		// fmt.Fprint(f, "%v\n", kvj)
+		fmt.Fprintf(f, "%s\n", kvj)
 	}
 
 	// rename for the reduce phase
@@ -201,7 +209,7 @@ func CallGetTask() (*GetTaskReply, error) {
 		return &reply, nil
 	} else {
 		// some errors happened
-		return nil, errors.New("Call failed")
+		return nil, errors.New("call failed")
 	}
 }
 
@@ -217,7 +225,7 @@ func CallUpdateTaskStatus(tasktype TaskType, name string) error {
 	if ok {
 		return nil
 	} else {
-		return errors.New("Call failed")
+		return errors.New("call failed")
 	}
 }
 
@@ -238,7 +246,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	// fmt.Println(err)
-	log.Fatalf(err.Error())
+	fmt.Println(err)
+	// log.Fatalf(err.Error())
 	return false
 }
