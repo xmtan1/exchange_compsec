@@ -13,6 +13,7 @@ import (
 )
 
 const timeOutCoefficient = 10
+const defaultWorkerPort = 30022
 
 var (
 	unstarted  Status = "unstarted"
@@ -22,12 +23,13 @@ var (
 
 type Coordinator struct {
 	// Your definitions here.
-	mapTasks        map[string]*TaskMetadata // a map of map task
-	reduceTasks     map[string]*TaskMetadata //a map of reduce task
-	cond            *sync.Cond               //condition variable (mutex)
-	mapRemaining    int
-	reduceRemaining int
-	numbeOfReduce   int // number of "reduce" workes, used in pair with partition key
+	mapTasks         map[string]*TaskMetadata // a map of map task
+	reduceTasks      map[string]*TaskMetadata //a map of reduce task
+	cond             *sync.Cond               //condition variable (mutex)
+	mapRemaining     int
+	reduceRemaining  int
+	numbeOfReduce    int      // number of "reduce" workes, used in pair with partition key
+	mapTaskAddresses []string // addressbook of all map workers
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -120,9 +122,11 @@ func (c *Coordinator) UpdateTaskStatus(args *UpdateTaskStatusArgs, reply *Update
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if args.Type == mapType {
+	if args.Type == mapType { // must collect the information of the map worker first
 		c.mapTasks[args.Name].status = completed
 		c.mapRemaining -= 1
+		currentMapWorkerID := c.mapTasks[args.Name].number
+		c.mapTaskAddresses[currentMapWorkerID] = args.WorkerAddress
 	} else {
 		c.reduceTasks[args.Name].status = completed
 		c.reduceRemaining -= 1
@@ -227,12 +231,13 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	cond := sync.NewCond(&mu)
 
 	c := Coordinator{
-		mapTasks:        mapTask,
-		reduceTasks:     reduceTask,
-		mapRemaining:    len(files),
-		reduceRemaining: nReduce,
-		numbeOfReduce:   nReduce,
-		cond:            cond,
+		mapTasks:         mapTask,
+		reduceTasks:      reduceTask,
+		mapRemaining:     len(files),
+		reduceRemaining:  nReduce,
+		numbeOfReduce:    nReduce,
+		cond:             cond,
+		mapTaskAddresses: make([]string, len(files)), // space equals to length of the passed files
 	}
 
 	// Your code here.

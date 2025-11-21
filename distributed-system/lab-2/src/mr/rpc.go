@@ -21,11 +21,13 @@ type GetTaskReply struct {
 	Number          int    // task number (to be refferred each phases, not to be confused with partition ID to put to reduce)
 	PartitionNumber int    // partition number, to match with which reducer will take it
 	Type            TaskType
+	MapAddresses    []string // used to store all map workers addresses
 }
 
 type UpdateTaskStatusArgs struct {
-	Name string
-	Type TaskType
+	Name          string
+	Type          TaskType
+	WorkerAddress string // return additional information about its address
 }
 
 type UpdateTaskStatusReply struct {

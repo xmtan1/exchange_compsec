@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
+	"net/http"
 	"net/rpc"
 	"os"
 	"path/filepath"
@@ -15,6 +17,10 @@ import (
 	"sort"
 	"strings"
 )
+
+// for advance feature
+const directoryPath = "."
+const defaultFilePort = 30022
 
 // borrow from mrapps
 type ByKey []KeyValue
@@ -27,6 +33,42 @@ func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 type KeyValue struct {
 	Key   string
 	Value string
+}
+
+// helper function to start a fileserver
+func StartHTTPFileServer(rootDirectory string, serverPort int) error {
+	_, err := os.Stat(rootDirectory)
+	if os.IsNotExist(err) {
+		// fmt.Printf("Directory %s is either not accessible or not exist.\n", rootDirectory)
+		return err
+	}
+
+	fileServer := http.FileServer(http.Dir(rootDirectory)) // start a fileserver at rootDirectory
+
+	// handle http
+	http.Handle("/", fileServer)
+
+	err = http.ListenAndServe(fmt.Sprintf(":%d", serverPort), nil)
+	if err != nil {
+		// fmt.Printf("Error starting the server %s", err)
+		return err
+	}
+	return nil
+}
+
+// helper function to get the worker 'current' address and send it along with the reply
+func GetServerAddress() (myAdress string, error error) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "", err
+	}
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if ok && !ipNet.IP.IsLoopback() && ipNet.IP.To4() != nil {
+			return ipNet.IP.String(), nil
+		}
+	}
+	return "", errors.New("cannot get address")
 }
 
 // use ihash(key) % NReduce to choose the reduce
@@ -43,6 +85,19 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// Your worker implementation here.
 
+	// start the file server first, then take the address string
+
+	// go func() {
+	// 	if err := StartHTTPFileServer(directoryPath, defaultFilePort); err != nil {
+	// 		fmt.Printf("Server failed: %v", err)
+	// 		os.Exit(1)
+	// 	}
+	// }()
+
+	// workerAddress, err := GetServerAddress()
+	// if workerAddress == "" {
+	// 	log.Fatalf("Cannot get the worker's address: %v", err)
+	// }
 	// uncomment to send the Example RPC to the coordinator.
 	// CallExample()
 	for {
@@ -53,10 +108,10 @@ func Worker(mapf func(string, string) []KeyValue,
 		if rep.Type == mapType {
 			// if get a map task, execute then call update
 			ExecuteMapTask(rep.Name, rep.Number, rep.PartitionNumber, mapf)
-			CallUpdateTaskStatus(mapType, rep.Name)
+			CallUpdateTaskStatus(mapType, rep.Name, "")
 		} else {
 			ExecuteReduceTask(rep.Number, reducef)
-			CallUpdateTaskStatus(reduceType, rep.Name)
+			CallUpdateTaskStatus(reduceType, rep.Name, "")
 		}
 	}
 }
@@ -225,15 +280,17 @@ func CallGetTask() (*GetTaskReply, error) {
 }
 
 // function to update a task status (done, timeout,...)
-func CallUpdateTaskStatus(tasktype TaskType, name string) error {
+func CallUpdateTaskStatus(tasktype TaskType, name string, workeraddress string) error {
 	args := UpdateTaskStatusArgs{
-		Name: name,
-		Type: tasktype,
+		Name:          name,
+		Type:          tasktype,
+		WorkerAddress: workeraddress,
 	}
 
 	reply := UpdateTaskStatusReply{}
 	ok := call("Coordinator.UpdateTaskStatus", &args, &reply)
 	if ok {
+		log.Printf("call with these args: %s, %s, %s", name, tasktype, workeraddress)
 		return nil
 	} else {
 		return errors.New("call failed")
