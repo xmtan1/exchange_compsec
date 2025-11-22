@@ -78,13 +78,13 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 		// still have remaining
 		// check the queue
 		mapTask, indexOfTask := c.GetMapTask()
-		for mapTask == "" {
-			if c.mapRemaining == 0 {
-				break
-			}
-			c.cond.Wait()
-			mapTask, indexOfTask = c.GetMapTask()
-		}
+		// for mapTask == "" {
+		// 	if c.mapRemaining == 0 {
+		// 		break
+		// 	}
+		// 	c.cond.Wait()
+		// 	mapTask, indexOfTask = c.GetMapTask()
+		// }
 		if mapTask != "" {
 			reply.Name = mapTask
 			reply.Number = indexOfTask
@@ -238,13 +238,10 @@ func (c *Coordinator) Rescheduler() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
+	// ret := false
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
-	if c.reduceRemaining == 0 {
-		return true
-	}
-	return ret
+	return c.reduceRemaining == 0 && c.mapRemaining == 0
 }
 
 // start a thread that listens for RPCs from worker.go
