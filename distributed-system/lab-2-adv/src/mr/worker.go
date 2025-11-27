@@ -16,11 +16,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // for advance feature
-const directoryPath = "."
-
 // borrow from mrapps
 type ByKey []KeyValue
 
@@ -82,27 +81,25 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
-
-	// start the file server first, then take the address string
-
-	// go func() {
-	// 	if err := StartHTTPFileServer(directoryPath, defaultFilePort); err != nil {
-	// 		fmt.Printf("Server failed: %v", err)
-	// 		os.Exit(1)
-	// 	}
-	// }()
-
-	// workerAddress, err := GetServerAddress()
-	// if workerAddress == "" {
-	// 	log.Fatalf("Cannot get the worker's address: %v", err)
-	// }
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
-	// workerAddress := StartHTTPFileServer(directoryPath)
-	// log.Printf("Worker file server started at %s", workerAddress)
-
 	for {
+
+		workerAddress := StartHTTPFileServer(".")
+		if workerAddress == "" {
+			log.Fatal("error in setting up a server")
+		}
+		log.Printf("server was setup at %s", workerAddress)
+
+		go func() {
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+			for range ticker.C {
+				_, err := CallHealthCheck(workerAddress)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+		}()
+
 		rep, err := CallGetTask()
 		if err != nil {
 			log.Fatal(err)
@@ -167,7 +164,6 @@ func ExecuteMapTask(filename string, mapNumber, numberofReduce int, mapf func(st
 			}
 		}
 		kvj, _ := json.Marshal(kv)
-		// fmt.Fprint(f, "%v\n", kvj)
 		fmt.Fprintf(f, "%s\n", kvj)
 	}
 
@@ -207,9 +203,6 @@ func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) strin
 			err := json.Unmarshal([]byte(trimmed), &kv)
 			if err != nil {
 				log.Fatalf("Cannot unmarshal %v, error %s", filename, err)
-				// weaker error catching logic
-				// log.Printf("Warning: Cannot unmarshal line: %q, error: %v", trimmed, err)
-				// continue
 			}
 			data = append(data, kv)
 		}
@@ -238,32 +231,20 @@ func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) strin
 	ofile.Close()
 }
 
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-// func CallExample() {
-
-// 	// declare an argument structure.
-// 	args := ExampleArgs{}
-
-// 	// fill in the argument(s).
-// 	args.X = 99
-
-// 	// declare a reply structure.
-// 	reply := ExampleReply{}
-
-// 	// send the RPC request, wait for the reply.
-// 	// the "Coordinator.Example" tells the
-// 	// receiving server that we'd like to call
-// 	// the Example() method of struct Coordinator.
-// 	ok := call("Coordinator.Example", &args, &reply)
-// 	if ok {
-// 		// reply.Y should be 100.
-// 		fmt.Printf("reply.Y %v\n", reply.Y)
-// 	} else {
-// 		fmt.Printf("call failed!\n")
-// 	}
-// }
+// health report
+func CallHealthCheck(addr string) (bool, error) {
+	args := HealthCheckArgs{
+		WorkerAddress: addr,
+		LastUpTime:    time.Now(),
+	}
+	reply := HealthCheckReply{}
+	ok := call("Coordinator.HealthCheck", &args, &reply)
+	if ok {
+		return reply.Acknowledge, nil
+	} else {
+		return false, errors.New("call falied")
+	}
+}
 
 // function call to get a task from coordinator
 func CallGetTask() (*GetTaskReply, error) {

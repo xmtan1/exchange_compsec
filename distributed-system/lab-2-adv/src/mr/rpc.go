@@ -9,12 +9,14 @@ package mr
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
-type GetTaskArgs struct {
-}
+type TaskType string
 
-type TaskType string // represent tasktype, either map or reduce task
+type GetTaskArgs struct {
+	WorkerAddress string
+}
 
 type GetTaskReply struct {
 	Name            string // the name of file that acts as the input
@@ -31,6 +33,15 @@ type UpdateTaskStatusArgs struct {
 }
 
 type UpdateTaskStatusReply struct {
+}
+
+type HealthCheckArgs struct {
+	WorkerAddress string
+	LastUpTime    time.Time
+}
+
+type HealthCheckReply struct {
+	Acknowledge bool
 }
 
 var (

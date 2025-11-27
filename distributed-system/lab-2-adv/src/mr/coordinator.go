@@ -13,7 +13,6 @@ import (
 )
 
 const timeOutCoefficient = 10
-const defaultWorkerPort = 30022
 
 var (
 	unstarted  Status = "unstarted"
@@ -22,28 +21,28 @@ var (
 )
 
 type Coordinator struct {
-	// Your definitions here.
-	mapTasks         map[string]*TaskMetadata // a map of map task
-	reduceTasks      map[string]*TaskMetadata //a map of reduce task
-	cond             *sync.Cond               //condition variable (mutex)
-	mapRemaining     int
-	reduceRemaining  int
-	numbeOfReduce    int      // number of "reduce" workes, used in pair with partition key
-	mapTaskAddresses []string // addressbook of all map workers
+	mapTasks        map[string]*TaskMetadata // a map of map task
+	reduceTasks     map[string]*TaskMetadata //a map of reduce task
+	cond            *sync.Cond               //condition variable (mutex)
+	mapRemaining    int
+	reduceRemaining int
+	numbeOfReduce   int // number of "reduce" workes, used in pair with partition key
+	workerMap       map[string]*WorkerInfor
 }
-
-// Your code here -- RPC handlers for the worker to call.
-
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
 
 type Status string // indicate the status, done, undone,...
 
 type TaskMetadata struct {
-	number    int // the sequence number to mark a task, i.e: taks 1-1, task 1-2 (task 1, partition 1, task 1 partition 2)
-	startTime time.Time
-	status    Status
+	number         int // the sequence number to mark a task, i.e: taks 1-1, task 1-2 (task 1, partition 1, task 1 partition 2)
+	startTime      time.Time
+	status         Status
+	assignedWorker string
+}
+
+type WorkerInfor struct {
+	WorkerAddress    string
+	LastReportedTime time.Time
+	WorkerDown       bool
 }
 
 // get task
@@ -86,11 +85,12 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 			mapTask, numberOfMapTask = c.GetMapTask()
 		}
 		if mapTask != "" { // have somthing in the queue
-			reply.Name = mapTask                    // name of the task
-			reply.Number = numberOfMapTask          // total number of tasks
-			reply.Type = mapType                    // type of task, of course it is map
-			reply.PartitionNumber = c.numbeOfReduce // number of partition to assign
-			c.cond.L.Unlock()                       // complete the critical selection
+			reply.Name = mapTask                                    // name of the task
+			reply.Number = numberOfMapTask                          // total number of tasks
+			reply.Type = mapType                                    // type of task, of course it is map
+			reply.PartitionNumber = c.numbeOfReduce                 // number of partition to assign
+			c.mapTasks[mapTask].assignedWorker = args.WorkerAddress //
+			c.cond.L.Unlock()                                       // complete the critical selection
 			return nil
 		}
 	}
@@ -125,8 +125,8 @@ func (c *Coordinator) UpdateTaskStatus(args *UpdateTaskStatusArgs, reply *Update
 	if args.Type == mapType { // must collect the information of the map worker first
 		c.mapTasks[args.Name].status = completed
 		c.mapRemaining -= 1
-		currentMapWorkerID := c.mapTasks[args.Name].number
-		c.mapTaskAddresses[currentMapWorkerID] = args.WorkerAddress
+		// currentMapWorkerID := c.mapTasks[args.Name].number
+		// c.mapTaskAddresses[currentMapWorkerID] = args.WorkerAddress
 	} else {
 		c.reduceTasks[args.Name].status = completed
 		c.reduceRemaining -= 1
@@ -179,6 +179,29 @@ func (c *Coordinator) Rescheduler() {
 }
 
 // function to just signal the "main" program that we have done
+func (c *Coordinator) HealthCheck(args *HealthCheckArgs, reply *HealthCheckReply) error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	for address, w := range c.workerMap {
+		if address == args.WorkerAddress {
+			// log.Printf("worker %s sent heartbeat, time: %v", address, w.LastReportedTime)
+			w.LastReportedTime = args.LastUpTime
+			w.WorkerDown = false
+		}
+	}
+
+	c.workerMap[args.WorkerAddress] = &WorkerInfor{
+		WorkerAddress:    args.WorkerAddress,
+		LastReportedTime: time.Now(),
+		WorkerDown:       false,
+	}
+
+	// log.Printf("new worker sent heartbeat, address %s, time: %v", c.workerMap[args.WorkerAddress].WorkerAddress, c.workerMap[args.WorkerAddress].LastReportedTime)
+
+	reply.Acknowledge = true
+	return nil
+}
 
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
@@ -231,13 +254,13 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	cond := sync.NewCond(&mu)
 
 	c := Coordinator{
-		mapTasks:         mapTask,
-		reduceTasks:      reduceTask,
-		mapRemaining:     len(files),
-		reduceRemaining:  nReduce,
-		numbeOfReduce:    nReduce,
-		cond:             cond,
-		mapTaskAddresses: make([]string, len(files)), // space equals to length of the passed files
+		mapTasks:        mapTask,
+		reduceTasks:     reduceTask,
+		mapRemaining:    len(files),
+		reduceRemaining: nReduce,
+		numbeOfReduce:   nReduce,
+		cond:            cond,
+		workerMap:       make(map[string]*WorkerInfor),
 	}
 
 	// Your code here.
