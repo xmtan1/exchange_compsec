@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -87,9 +86,73 @@ func ProbleFileExposed(addr string, filename string) error {
 	return nil
 }
 
-func FetchFiles(mapAddress []string, partition int) ([]KeyValue, error) {
-	var wg sync.WaitGroup // protect the shared data
-	return nil
+func FetchData(mapWorkerAddress []string, partition int) ([]KeyValue, error) {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	fetchedData := make([]KeyValue, 0)
+	errChan := make(chan error, len(mapWorkerAddress))
+
+	for i, address := range mapWorkerAddress {
+		if address == "" {
+			continue
+		}
+
+		wg.Add(1)
+
+		go func(index int, addr string) {
+			defer wg.Done()
+			filename := fmt.Sprintf("mr-%d-%d", index, partition)
+			fileurl := fmt.Sprintf("%s/%s", addr, filename)
+
+			client := http.Client{
+				Timeout: 2 * time.Second,
+			}
+			resp, err := client.Get(fileurl)
+			if err != nil {
+				log.Printf("[ERROR][Reduce worker] Worker %s is not reachable: %v", addr, err)
+				// call report failure
+				errChan <- fmt.Errorf("map worker %d is unreachable", index)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("[ERROR][HTTP] Code %d from %s", resp.StatusCode, addr)
+				// call report failure
+				errChan <- fmt.Errorf("map worker %d is missing", index)
+				return
+			}
+			var localData []KeyValue
+			decoder := json.NewDecoder(resp.Body)
+
+			for {
+				var kv KeyValue
+				if err := decoder.Decode(&kv); err != nil {
+					if err == io.EOF {
+						break
+					}
+					log.Printf("[ERROR][JSON] Corrupt data from file %s: %v", fileurl, err)
+					// report
+					errChan <- fmt.Errorf("corrupt data map %d", index)
+					return
+				}
+				localData = append(localData, kv)
+			}
+
+			mu.Lock()
+			fetchedData = append(fetchedData, localData...)
+			mu.Unlock()
+		}(i, address)
+	}
+
+	wg.Wait()
+	close(errChan)
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return fetchedData, nil
 }
 
 // use ihash(key) % NReduce to choose the reduce
@@ -133,15 +196,15 @@ func Worker(mapf func(string, string) []KeyValue,
 			// probe for the filename
 			for i := 0; i < rep.PartitionNumber; i++ {
 				err := ProbleFileExposed(workerAddress, fmt.Sprintf("mr-%d-%d", rep.Number, i))
-				log.Printf("[Info] Verify file number %d of map worker %d...", i, rep.Number)
+				// log.Printf("[Info] Verify file number %d of map worker %d...", i, rep.Number)
 				if err != nil {
-					log.Printf("[Self-check] Exposed file failed, error %v", err)
+					// log.Printf("[Self-check] Exposed file failed, error %v", err)
 					continue
 				}
 			}
 			CallUpdateTaskStatus(mapType, rep.Name, workerAddress)
 		} else {
-			ExecuteReduceTask(rep.Number, reducef)
+			ExecuteReduceTask(rep.Number, reducef, rep.MapAddresses)
 			CallUpdateTaskStatus(reduceType, rep.Name, "")
 		}
 	}
@@ -212,43 +275,51 @@ func ExecuteMapTask(filename string, mapNumber, numberofReduce int, mapf func(st
 }
 
 // function for reduce worker
-func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) string) {
+func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) string, mapWorkerAddress []string) {
 	// fetch the filename
 	// client := http.Client{
 	// 	Timeout: 2 * time.Second,
 	// }
-
-	filenames, _ := WalkDir("./", partitionNumber) // look for current directory of all file with reduceNumber pattern
-	data := make([]KeyValue, 0)
-	for _, filename := range filenames {
-		file, err := os.Open(filename)
-		if err != nil {
-			log.Fatalf("Cannot open file %v, error %s", filename, err)
-		}
-		content, err := io.ReadAll(file)
-		if err != nil {
-			log.Fatalf("Cannot read %v, error %s", filename, err)
-		}
-		file.Close()
-
-		// this split string got an error of unexpected EOF in test (wc test)
-		kvstrings := strings.Split(string(content), "\n")
-		// kv := KeyValue{}
-		for _, kvstring := range kvstrings {
-			// trimmed the whitespace, end character,...
-			trimmed := strings.TrimSpace(kvstring)
-			if len(trimmed) == 0 {
-				// skip empty line
-				continue
-			}
-			kv := KeyValue{} // allow the kv to get rid of garbage values
-			err := json.Unmarshal([]byte(trimmed), &kv)
-			if err != nil {
-				log.Fatalf("Cannot unmarshal %v, error %s", filename, err)
-			}
-			data = append(data, kv)
-		}
+	data, err := FetchData(mapWorkerAddress, partitionNumber)
+	if err != nil {
+		log.Printf("[ERROR][Worker] FetchData failed: %v", err)
 	}
+
+	//filenames, _ := WalkDir("./", partitionNumber) // look for current directory of all file with reduceNumber pattern
+	//data := make([]KeyValue, 0)
+	// for _, filename := range filenames {
+	// 	file, err := os.Open(filename)
+	// 	if err != nil {
+	// 		log.Fatalf("Cannot open file %v, error %s", filename, err)
+	// 	}
+	// 	content, err := io.ReadAll(file)
+	// 	if err != nil {
+	// 		log.Fatalf("Cannot read %v, error %s", filename, err)
+	// 	}
+	// 	file.Close()
+
+	// 	// this split string got an error of unexpected EOF in test (wc test)
+	// 	kvstrings := strings.Split(string(content), "\n")
+	// 	// kv := KeyValue{}
+	// 	for _, kvstring := range kvstrings {
+	// 		// trimmed the whitespace, end character,...
+	// 		trimmed := strings.TrimSpace(kvstring)
+	// 		if len(trimmed) == 0 {
+	// 			// skip empty line
+	// 			continue
+	// 		}
+	// 		kv := KeyValue{} // allow the kv to get rid of garbage values
+	// 		err := json.Unmarshal([]byte(trimmed), &kv)
+	// 		if err != nil {
+	// 			log.Fatalf("Cannot unmarshal %v, error %s", filename, err)
+	// 		}
+	// 		data = append(data, kv)
+	// 	}
+	// }
+
+	// if len(data) != len(testdata) {
+	// 	log.Printf("[ERROR][Fetch failed] Walkdir found %d records while fetch found %d", len(data), len(testdata))
+	// }
 
 	sort.Sort(ByKey(data))
 
