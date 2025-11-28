@@ -147,8 +147,6 @@ func (c *Coordinator) Rescheduler() {
 				if status == inprogress {
 					different := currentTime.Sub(startTime)
 					if different > timeOutCoefficient*time.Second {
-						// if the task was running too long, assume that we have 10
-						// log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, mapType)
 						c.mapTasks[task].status = unstarted
 						c.cond.Broadcast() // signal the GetTask function, the Wait() function
 					}

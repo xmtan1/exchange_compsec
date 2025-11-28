@@ -69,6 +69,23 @@ func GetServerAddress() (myAdress string, error error) {
 	return "", errors.New("cannot get address")
 }
 
+// self check the map exposed
+func ProbleFileExposed(addr string, filename string) error {
+	url := fmt.Sprintf("%s/%s", addr, filename)
+	client := http.Client{
+		Timeout: 100 * time.Millisecond,
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("[Self-check] Failed, could not connect to self: %s, error %v", addr, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("[Self-check] Failed, either the file has been moved or insufficent permisison, file %s, error %v", filename, resp.StatusCode)
+	}
+	return nil
+}
+
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
 func ihash(key string) int {
@@ -107,7 +124,16 @@ func Worker(mapf func(string, string) []KeyValue,
 		if rep.Type == mapType {
 			// if get a map task, execute then call update
 			ExecuteMapTask(rep.Name, rep.Number, rep.PartitionNumber, mapf)
-			CallUpdateTaskStatus(mapType, rep.Name, "")
+			// probe for the filename
+			for i := 0; i < rep.PartitionNumber; i++ {
+				err := ProbleFileExposed(workerAddress, fmt.Sprintf("mr-%d-%d", rep.Number, i))
+				log.Printf("[Info] Verify file number %d of map worker %d...", i, rep.Number)
+				if err != nil {
+					log.Printf("[Self-check] Exposed file failed, error %v", err)
+					continue
+				}
+			}
+			CallUpdateTaskStatus(mapType, rep.Name, workerAddress)
 		} else {
 			ExecuteReduceTask(rep.Number, reducef)
 			CallUpdateTaskStatus(reduceType, rep.Name, "")
