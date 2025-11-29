@@ -109,6 +109,7 @@ func FetchData(mapWorkerAddress []string, partition int) ([]KeyValue, error) {
 			resp, err := client.Get(fileurl)
 			if err != nil {
 				go func(badAddr string) {
+					log.Printf("Failed worker %s", badAddr)
 					CallFailureTask(badAddr)
 				}(addr)
 				errChan <- fmt.Errorf("map worker %s unreachable", addr)
@@ -117,6 +118,7 @@ func FetchData(mapWorkerAddress []string, partition int) ([]KeyValue, error) {
 			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
 				go func(badAddr string) {
+					log.Printf("Failed worker %s", badAddr)
 					CallFailureTask(badAddr)
 				}(addr)
 				errChan <- fmt.Errorf("map worker %s returned %d", addr, resp.StatusCode)
@@ -132,6 +134,7 @@ func FetchData(mapWorkerAddress []string, partition int) ([]KeyValue, error) {
 						break
 					}
 					go func(badAddr string) {
+						log.Printf("Failed worker %s", badAddr)
 						CallFailureTask(badAddr)
 					}(addr)
 					errChan <- err
@@ -188,16 +191,30 @@ func Worker(mapf func(string, string) []KeyValue,
 		rep, err := CallGetTask(workerAddress)
 		if err != nil {
 			// log.Fatal(err)
+			// log.Printf("call failed due to %v", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		if rep.Type == mapType {
 			// if get a map task, execute then call update
+			log.Printf("Got map task with information %s, %d, %d. Self %s", rep.Name, rep.Number, rep.PartitionNumber, workerAddress)
 			ExecuteMapTask(rep.Name, rep.Number, rep.PartitionNumber, mapf)
+			log.Printf("Completed, update with information %s, %s", rep.Name, workerAddress)
 			CallUpdateTaskStatus(mapType, rep.Name, workerAddress)
+			// time.Sleep(10 * time.Millisecond)
 		} else {
-			ExecuteReduceTask(rep.Number, reducef, rep.MapAddresses)
-			CallUpdateTaskStatus(reduceType, rep.Name, "")
+			for _, s := range rep.MapAddresses {
+				log.Printf("Address of previous worker: %s", s)
+			}
+			log.Printf("Got reduce task with information %s", rep.Name)
+			err := ExecuteReduceTask(rep.Number, reducef, rep.MapAddresses)
+			if err == nil {
+				log.Printf("Completed, update with information %s", rep.Name)
+				CallUpdateTaskStatus(reduceType, rep.Name, "")
+				// time.Sleep(10 * time.Millisecond)
+			} else {
+				time.Sleep(500 * time.Millisecond)
+			}
 		}
 	}
 }
@@ -245,10 +262,11 @@ func ExecuteMapTask(filename string, mapNumber, numberofReduce int, mapf func(st
 }
 
 // function for reduce worker
-func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) string, mapWorkerAddress []string) {
+func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) string, mapWorkerAddress []string) error {
 	data, err := FetchData(mapWorkerAddress, partitionNumber)
 	if err != nil {
 		log.Printf("[ERROR][Worker] FetchData failed: %v", err)
+		return err
 	}
 
 	sort.Sort(ByKey(data))
@@ -272,6 +290,8 @@ func ExecuteReduceTask(partitionNumber int, reducef func(string, []string) strin
 		i = j
 	}
 	ofile.Close()
+
+	return nil
 }
 
 // failure call

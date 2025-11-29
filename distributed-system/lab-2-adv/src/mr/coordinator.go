@@ -135,6 +135,17 @@ func (c *Coordinator) UpdateTaskStatus(args *UpdateTaskStatusArgs, reply *Update
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
+	if w, ok := c.workerMap[args.WorkerAddress]; ok {
+		w.LastReportedTime = time.Now()
+		w.WorkerDown = false
+	} else {
+		c.workerMap[args.WorkerAddress] = &WorkerInfor{
+			WorkerAddress:    args.WorkerAddress,
+			LastReportedTime: time.Now(),
+			WorkerDown:       false,
+		}
+	}
+
 	if args.Type == mapType {
 		task, ok := c.mapTasks[args.Name]
 		if !ok {
@@ -155,14 +166,17 @@ func (c *Coordinator) UpdateTaskStatus(args *UpdateTaskStatusArgs, reply *Update
 
 func (c *Coordinator) HealthMonitor() {
 	for {
-		time.Sleep(1 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 		c.cond.L.Lock()
 
 		for addr, worker := range c.workerMap {
-			if time.Since(worker.LastReportedTime) > 10*time.Second {
+			if time.Since(worker.LastReportedTime) > 4*time.Second {
+				log.Printf("Worker down %s", addr)
 				HardReset(c, addr)
 				SoftReset(c, addr)
 				delete(c.workerMap, addr)
+
+				c.cond.Broadcast()
 			}
 		}
 		c.cond.L.Unlock()
@@ -182,8 +196,6 @@ func (c *Coordinator) Rescheduler() {
 				if status == inprogress {
 					different := currentTime.Sub(startTime)
 					if different > timeOutCoefficient*time.Second {
-						// if the task was running too long, assume that we have 10
-						// log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, mapType)
 						c.mapTasks[task].status = unstarted
 						c.mapTasks[task].assignedWorker = ""
 						c.cond.Broadcast() // signal the GetTask function, the Wait() function
@@ -199,7 +211,6 @@ func (c *Coordinator) Rescheduler() {
 				if status == inprogress {
 					different := currentTime.Sub(startTime)
 					if different > timeOutCoefficient*time.Second { // double check for the time, if not specified the second -> take nanosecond -> extremely fast -> create redundant tasks
-						// log.Printf("Rescheduling a task with name '%s', type of this task '%s'.", task, reduceType)
 						c.reduceTasks[task].status = unstarted
 						c.reduceTasks[task].assignedWorker = ""
 						c.cond.Broadcast()
@@ -238,8 +249,9 @@ func (c *Coordinator) HealthCheck(args *HealthCheckArgs, reply *HealthCheckReply
 }
 
 func HardReset(c *Coordinator, failedWorker string) {
-	for _, task := range c.mapTasks {
+	for name, task := range c.mapTasks {
 		if task.assignedWorker == failedWorker {
+			log.Printf("Reset task %s of worker %s", name, failedWorker)
 			prevStatus := task.status
 			task.status = unstarted
 			task.assignedWorker = ""
@@ -252,11 +264,14 @@ func HardReset(c *Coordinator, failedWorker string) {
 }
 
 func SoftReset(c *Coordinator, failedWorker string) {
-	for _, task := range c.reduceTasks {
+	for name, task := range c.reduceTasks {
 		if task.assignedWorker == failedWorker {
-			task.status = unstarted
-			task.assignedWorker = ""
-			task.startTime = time.Time{}
+			if task.status == inprogress {
+				log.Printf("Reset task %s of worker %s", name, failedWorker)
+				task.status = unstarted
+				task.assignedWorker = ""
+				task.startTime = time.Time{}
+			}
 		}
 	}
 }
@@ -271,6 +286,8 @@ func (c *Coordinator) ReportFailure(args *FailedTaskReportArgs, reply *FailedTas
 		w.WorkerDown = true
 	}
 
+	log.Printf("Worker reported down %s", failedWorker)
+
 	HardReset(c, failedWorker) // for map task
 	SoftReset(c, failedWorker)
 
@@ -281,13 +298,12 @@ func (c *Coordinator) ReportFailure(args *FailedTaskReportArgs, reply *FailedTas
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 	if c.reduceRemaining == 0 {
 		return true
 	}
-	return ret
+	return c.mapRemaining == 0 && c.reduceRemaining == 0
 }
 
 // start a thread that listens for RPCs from worker.go
