@@ -65,9 +65,6 @@ var (
 // Can't use the current directory since
 // Athena AFS doesn't support UNIX-domain sockets.
 func coordinatorSock() string {
-	// s := "/var/tmp/5840-mr-"
-	// s += strconv.Itoa(os.Getuid())
-	// return s
 	host := os.Getenv("COORDINATOR_HOST")
 	if host != "" {
 		return host

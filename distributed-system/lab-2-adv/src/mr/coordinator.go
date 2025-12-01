@@ -3,6 +3,7 @@ package mr
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -296,6 +297,28 @@ func (c *Coordinator) ReportFailure(args *FailedTaskReportArgs, reply *FailedTas
 	return nil
 }
 
+func (c *Coordinator) UploadWork(w http.ResponseWriter, r *http.Request) {
+	filename := r.URL.Query().Get("name")
+	if filename == "" {
+		http.Error(w, "Missing filename", http.StatusBadRequest)
+		return
+	}
+	log.Printf("[LOG][COORDINATOR] Receiving file %s", filename)
+	outFile, err := os.Create(filename)
+	if err != nil {
+		http.Error(w, "Failed to create the file on the coordinator", http.StatusInternalServerError)
+		return
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, r.Body)
+	if err != nil {
+		http.Error(w, "Failed to write the file with content", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
@@ -309,18 +332,10 @@ func (c *Coordinator) Done() bool {
 
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
-	// rpc.Register(c)
-	// rpc.HandleHTTP()
-	// l, e := net.Listen("tcp", ":30080")
-	// sockname := coordinatorSock()
-	// os.Remove(sockname)
-	// // l, e := net.Listen("unix", sockname)
-	// if e != nil {
-	// 	log.Fatal("listen error:", e)
-	// }
-	// go http.Serve(l, nil)
 	rpc.Register(c)
 	rpc.HandleHTTP()
+
+	http.HandleFunc("/upload", c.UploadWork)
 
 	sockname := coordinatorSock()
 
@@ -340,6 +355,7 @@ func (c *Coordinator) server() {
 	if e != nil {
 		log.Fatalf("[ERROR] Cannot listen: %v", e)
 	}
+
 	go http.Serve(l, nil)
 }
 
