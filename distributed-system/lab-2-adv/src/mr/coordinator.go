@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,7 @@ type Coordinator struct {
 	reduceRemaining int
 	numbeOfReduce   int // number of "reduce" workes, used in pair with partition key
 	workerMap       map[string]*WorkerInfor
+	mergedOutput    bool
 }
 
 type Status string // indicate the status, done, undone,...
@@ -319,12 +321,28 @@ func (c *Coordinator) UploadWork(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (c *Coordinator) MergeOutput() {
+	log.Println("[INFO][COORDINATOR] All tasks were done, merging the output...")
+	cmd := exec.Command("bash", "-c", "sort mr-out* | grep . > mr-wc-all")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[ERROR][COORDINATOR] Merge failed: %v\nOutput: %s", err, output)
+	} else {
+		log.Printf("[INFO] Final output created: mr-wc-all")
+	}
+}
+
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 	if c.reduceRemaining == 0 {
+		if !c.mergedOutput {
+			c.cond.L.Unlock()
+			c.MergeOutput()
+			c.cond.L.Lock()
+			c.mergedOutput = true
+		}
 		return true
 	}
 	return c.mapRemaining == 0 && c.reduceRemaining == 0
