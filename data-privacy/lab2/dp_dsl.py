@@ -224,11 +224,17 @@ class DP_DSL:
         results = []
         prev_stability = dataset.stability
 
+        final_used_budget = self._used
+
         for k in keys:
             partition_data = buckets[k]
             partition_dataset = dataset._create_new(partition_data, prev_stability)
 
+            self._used -= epsilon
+
             res = computation(k, partition_dataset)
+
+            self._used = final_used_budget
             results.append((k, res))
 
         return results
@@ -249,8 +255,15 @@ class DP_DSL:
             DPResult with noisy count and epsilon spent
 
         """
-        # TODO: Implement DP count measurement
-        pass
+        self._consume_budget(epsilon)
+
+        true_count = len(dataset)
+
+        sensitivity = 1 * dataset.stability # sen of count is 1
+
+        res = self._add_laplace_noise(true_count, sensitivity, epsilon)
+
+        return DPResult(res, epsilon)
 
     def sum(self,
             dataset: Dataset[float],
@@ -269,8 +282,18 @@ class DP_DSL:
             DPResult with noisy sum and epsilon spent
 
         """
-        # TODO: Implement DP sum measurement
-        pass
+        self._consume_budget(epsilon)
+
+        true_sum = 0.0
+        for item in dataset:
+            true_sum += min(upper_bound, max(lower_bound, item)) # capped the data, must be usable
+        
+        max_magnitude = max(abs(lower_bound), abs(upper_bound))
+        sensitivity = dataset.stability * max_magnitude
+
+        res = self._add_laplace_noise(true_sum, sensitivity, epsilon)
+
+        return DPResult(res, epsilon)
 
     # ============================================================================
     # Noise Generation (PROVIDED - DO NOT MODIFY)
@@ -323,8 +346,10 @@ class DP_DSL:
         STUDENT TODO: Reset both total and used budget.
         Validate that new_budget > 0.
         """
-        # TODO: Implement budget reset
-        pass
+        if new_budget <= 0:
+            raise ValueError(f"Expected new budget is positive, got {new_budget}")
+        self._total = new_budget
+        self._used = 0
 
     def budget_status(self) -> Dict[str, float]:
         """Get current budget status
@@ -333,14 +358,26 @@ class DP_DSL:
             Dictionary with budget information
         """
         # TODO: Implement budget status reporting
-        pass
+        infor = {}
+        infor["total_budget"] = self.get_total_budget()
+        infor["used_budget"] = self.get_used_budget()
+        infor["remaining_budget"] = self.get_remaining_budget()
+
+        total = self.get_total_budget()
+        if total > 0:
+            infor["usage_percentage"] = (self.get_used_budget() / total) * 100.0
+        else:
+            infor["usage_percentage"] = 0.0
+
+        return infor
 
     def __str__(self) -> str:
         """String representation of DSL state
 
         """
-        # TODO: Implement string representation
-        pass
+        stats = self.budget_status()
+        return (f"DP_DSL Budget: {stats['used_budget']:.3f}/{stats['total_budget']:.3f} "
+                f"({stats['usage_percentage']:.1f}%)")
 
     def __repr__(self) -> str:
         """Detailed representation of DSL state"""
