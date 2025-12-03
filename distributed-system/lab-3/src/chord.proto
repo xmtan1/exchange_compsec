@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package chord;
+
+option go_package = "chord/protocol";
+
+// The Chord service definition
+service Chord {
+  // Ping is a simple health check
+  rpc Ping(PingRequest) returns (PingResponse) {}
+  
+  // Put stores a key-value pair
+  rpc Put(PutRequest) returns (PutResponse) {}
+  
+  // Get retrieves a value for a key
+  rpc Get(GetRequest) returns (GetResponse) {}
+  
+  // Delete removes a key-value pair
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  
+  // GetAll retrieves all key-value pairs
+  rpc GetAll(GetAllRequest) returns (GetAllResponse) {}
+}
+
+// The request message for Ping, containing no fields
+message PingRequest {}
+
+// The response message for Ping, containing no fields
+message PingResponse {}
+
+// The request message for Put
+message PutRequest {
+  string key = 1;
+  string value = 2;
+}
+
+// The response message for Put
+message PutResponse {}
+
+// The request message for Get
+message GetRequest {
+  string key = 1;
+}
+
+// The response message for Get
+message GetResponse {
+  string value = 1;
+}
+
+// The request message for Delete
+message DeleteRequest {
+  string key = 1;
+}
+
+// The response message for Delete
+message DeleteResponse {}
+
+// The request message for GetAll
+message GetAllRequest {}
+
+// The response message for GetAll
+message GetAllResponse {
+  map<string, string> key_values = 1;
+}
