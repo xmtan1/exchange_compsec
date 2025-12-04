@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/big"
 	"sync"
+	"time"
 
 	pb "chord/protocol" // Update path as needed
 )
@@ -148,15 +149,46 @@ func (n *Node) GetSuccessorList(ctx context.Context, rep *pb.GetSuccessorListReq
 }
 
 // Find the successor of id, performed by node n
+func (n *Node) FindSuccessor(id *big.Int) (string, error) {
+	currentCandidate := n.findClosetPredecessor(id)
+
+	if currentCandidate == n.Address {
+		return n.Successors[0], nil
+	}
+
+	for {
+		candidateSuccessor, _ := GetSuccessorList(currentCandidate)
+		candID := hash(currentCandidate)
+		succID := hash(candidateSuccessor)
+
+		if between(candID, id, succID, true) {
+			return candidateSuccessor, nil
+		}
+
+		nextHop, err := FindClosetPredecessor(context.Background(), currentCandidate, id.String())
+		if err != nil {
+			return "", err
+		}
+
+		currentCandidate = nextHop
+	}
+}
 
 func (n *Node) findClosetPredecessor(id *big.Int) string {
+	n.mu.Lock()
+	defer n.mu.RUnlock()
+
+	currentID := hash(n.Address)
+
 	for i := keySize; i >= 1; i-- {
 		fingerAddr := n.FingerTable[i]
 		if fingerAddr == "" {
 			continue
 		}
 
-		if between(hash(n.Address), hash(fingerAddr), id, false) {
+		fingerID := hash(fingerAddr)
+
+		if between(currentID, fingerID, id, false) {
 			return fingerAddr
 		}
 	}
@@ -166,7 +198,25 @@ func (n *Node) findClosetPredecessor(id *big.Int) string {
 // Find the successor
 
 func (n *Node) checkPredecessor() {
-	// TODO: Student will implement this
+	n.mu.RLock()
+	predAddr := n.Predecessor
+	n.mu.RUnlock()
+
+	if predAddr == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := PingNode(ctx, predAddr)
+
+	if err != nil {
+		log.Printf("Predecessor %s is dead. Clearing.", predAddr)
+		n.mu.Lock() // Lock for writing
+		n.Predecessor = ""
+		n.mu.Unlock()
+	}
 }
 
 func (n *Node) stabilize() {
