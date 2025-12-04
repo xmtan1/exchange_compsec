@@ -137,6 +137,16 @@ func (n *Node) FindClosestPreceding(ctx context.Context, req *pb.FindClosestPrec
 	}, nil
 }
 
+// Get a list of successors first (successors of a node, not a key)
+func (n *Node) GetSuccessorList(ctx context.Context, rep *pb.GetSuccessorListRequest) (*pb.GetSuccessorListResponse, error) {
+	n.mu.Lock()
+	defer n.mu.RUnlock()
+
+	return &pb.GetSuccessorListResponse{
+		Successors: n.Successors,
+	}, nil
+}
+
 // Find the successor of id, performed by node n
 
 func (n *Node) findClosetPredecessor(id *big.Int) string {
@@ -152,6 +162,8 @@ func (n *Node) findClosetPredecessor(id *big.Int) string {
 	}
 	return n.Address
 }
+
+// Find the successor
 
 func (n *Node) checkPredecessor() {
 	// TODO: Student will implement this

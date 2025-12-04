@@ -26,6 +26,9 @@ service Chord {
 
   // FindSuccessor
   rpc FindSuccessor(FindSuccessorRequest) returns (FindSuccessorResponse) {}
+
+  // GetSuccessorList
+  rpc GetSuccessorList(GetSuccessorListRequest) returns (GetSuccessorListResponse) {}
 }
 
 // The request message for Ping, containing no fields
@@ -85,4 +88,10 @@ message FindSuccessorRequest {
 
 message FindSuccessorResponse {
   string address = 1;
+}
+
+// message for get list of Successors
+message GetSuccessorListRequest {}
+message GetSuccessorListResponse { 
+  repeated string successors = 1; 
 }

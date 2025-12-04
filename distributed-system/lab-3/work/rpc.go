@@ -124,3 +124,25 @@ func FindClosetPredecessor(ctx context.Context, remoteAddr string, lookupID stri
 
 	return resp.Address, nil
 }
+
+func GetSuccessorList(address string) (string, error) {
+	address = resolveAddress(address)
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	client := pb.NewChordClient(conn)
+	resp, err := client.GetSuccessorList(context.Background(), &pb.GetSuccessorListRequest{})
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(resp.Successors) == 0 {
+		return "", fmt.Errorf("chord %s returned an empty successors list", address)
+	}
+
+	return resp.Successors[0], nil
+}
