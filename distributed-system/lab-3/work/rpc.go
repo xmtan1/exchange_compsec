@@ -178,3 +178,5 @@ func GetSuccessorList(address string) ([]string, error) {
 
 	return resp.Successors, nil
 }
+
+// Get a successor of a node (indicated by address)
