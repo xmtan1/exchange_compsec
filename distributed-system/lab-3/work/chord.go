@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/big"
 	"sync"
-	"time"
 
 	pb "chord/protocol" // Update path as needed
 )
@@ -124,46 +123,6 @@ func (n *Node) GetAll(ctx context.Context, req *pb.GetAllRequest) (*pb.GetAllRes
 	return &pb.GetAllResponse{KeyValues: keyValues}, nil
 }
 
-// Find the closest (clockwise) predecessor node for an ID, this is called function.
-func (n *Node) FindClosestPreceding(ctx context.Context, req *pb.FindClosestPrecedingRequest) (*pb.FindClosestPrecedingResponse, error) {
-	n.mu.Lock()
-	defer n.mu.RUnlock()
-
-	targetID := new(big.Int)
-	targetID.SetString(req.Id, 10)
-
-	closestAddr := n.findClosetPredecessor(targetID)
-	return &pb.FindClosestPrecedingResponse{
-		Address: closestAddr,
-	}, nil
-}
-
-// Called by another node
-func (n *Node) FindSuccessor(ctx context.Context, req *pb.FindSuccessorRequest) (*pb.FindSuccessorResponse, error) {
-	id := new(big.Int)
-	_, ok := id.SetString(req.Id, 10)
-	if !ok {
-		return nil, fmt.Errorf("invalid ID format")
-	}
-	successorAddr, err := n.findSuccessor(id)
-	if err != nil {
-		return nil, err
-	}
-	return &pb.FindSuccessorResponse{
-		Address: successorAddr,
-	}, nil
-}
-
-// Get a list of successors first (successors of a node, not a key)
-func (n *Node) GetSuccessorList(ctx context.Context, rep *pb.GetSuccessorListRequest) (*pb.GetSuccessorListResponse, error) {
-	n.mu.Lock()
-	defer n.mu.RUnlock()
-
-	return &pb.GetSuccessorListResponse{
-		Successors: n.Successors,
-	}, nil
-}
-
 // Find the successor of id, performed by node n
 // try to jump to closet predecessor of that id
 // this is the logic code
@@ -243,62 +202,7 @@ func (n *Node) findClosetPredecessor(id *big.Int) string {
 
 // Check predecessor logic, check for alive one
 func (n *Node) checkPredecessor() {
-	n.mu.RLock()
-	predAddr := n.Predecessor
-	n.mu.RUnlock()
 
-	if predAddr == "" {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	err := PingNode(ctx, predAddr)
-
-	if err != nil {
-		log.Printf("Predecessor %s is dead. Clearing.", predAddr)
-		n.mu.Lock() // Lock for writing
-		n.Predecessor = ""
-		n.mu.Unlock()
-	}
-}
-
-func (n *Node) Notify(ctx context.Context, req *pb.NotifyRequest) (*pb.NotifyResponse, error) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	predNode := req.Address
-
-	if n.Predecessor == "" {
-		n.Predecessor = predNode
-		return &pb.NotifyResponse{}, nil
-	}
-
-	hashID := hash(n.Address)
-	currentPredNodeID := hash(n.Predecessor)
-	predNodeID := hash(predNode)
-
-	if between(currentPredNodeID, predNodeID, hashID, false) {
-		n.Predecessor = predNode
-	}
-
-	return &pb.NotifyResponse{}, nil
-}
-
-func (n *Node) GetPredecessor(ctx context.Context, req *pb.GetPredecessorRequest) (*pb.GetPredecessorResponse, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.Predecessor == "" {
-		return &pb.GetPredecessorResponse{
-			Address: "",
-		}, nil
-	}
-
-	return &pb.GetPredecessorResponse{
-		Address: n.Predecessor,
-	}, nil
 }
 
 // Internal self function to stabilize after fault of successors
@@ -307,39 +211,6 @@ func (n *Node) GetPredecessor(ctx context.Context, req *pb.GetPredecessorRequest
 // n - x - first successor
 func (n *Node) stabilize() {
 	// TODO: Student will implement this
-	n.mu.RLock()
-	firstSuccessor := n.Successors[0]
-	n.mu.RUnlock()
-
-	x, err := GetPredecessor(firstSuccessor)
-
-	if err == nil && x != "" {
-		if between(hash(n.Address), hash(x), hash(firstSuccessor), false) {
-			n.mu.Lock()
-			n.Successors[0] = x
-			n.mu.Unlock()
-
-			firstSuccessor = x
-		}
-	}
-
-	Notify(firstSuccessor, n.Address)
-
-	successorList, err := GetSuccessorList(firstSuccessor)
-	if err == nil {
-		n.mu.Lock()
-		defer n.mu.Unlock()
-
-		newList := []string{firstSuccessor}
-
-		newList = append(newList, successorList...)
-
-		if len(newList) > successorListSize {
-			newList = newList[:successorListSize]
-		}
-
-		n.Successors = newList
-	}
 }
 
 func (n *Node) fixFingers(nextFinger int) int {
@@ -348,15 +219,7 @@ func (n *Node) fixFingers(nextFinger int) int {
 	if nextFinger > keySize {
 		nextFinger = 1
 	}
-	nextID := jump(n.Address, nextFinger)
 
-	succAddr, err := n.findSuccessor(nextID)
-
-	if err == nil {
-		n.mu.Lock()
-		n.FingerTable[nextFinger] = succAddr
-		n.mu.Unlock()
-	}
 	return nextFinger
 }
 
