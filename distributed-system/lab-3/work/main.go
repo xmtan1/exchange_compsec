@@ -88,6 +88,11 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 		nprime = resolveAddress(nprime)
 		node.Successors = []string{nprime}
 		// TODO: use a GetAll request to populate our bucket
+		remoteBucket, err := GetAllKeyValues(context.Background(), nprime)
+		if err != nil {
+			log.Printf("[WARNING][GET DATA] Failed to get data from node %s: %v", nprime, err)
+		}
+		node.Bucket = remoteBucket
 	}
 
 	// Start listening for RPC calls
