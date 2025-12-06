@@ -30,7 +30,7 @@ type Node struct {
 	mu sync.RWMutex
 
 	Address     string
-	ID          *big.Int
+	NodeId      *big.Int
 	Predecessor string
 	Successors  []string
 	FingerTable []string
@@ -71,6 +71,95 @@ func between(start, elt, end *big.Int, inclusive bool) bool {
 		return (start.Cmp(elt) < 0 && elt.Cmp(end) < 0) || (inclusive && elt.Cmp(end) == 0)
 	} else {
 		return start.Cmp(elt) < 0 || elt.Cmp(end) < 0 || (inclusive && elt.Cmp(end) == 0)
+	}
+}
+
+// logic implementation for check closet predecessor of an ID
+// scan from m down to 1 (far to near) in the finger table
+// if an entry and current node and id form node - id - finger[i], return that entry
+func (n *Node) findClosetPredecessor(id *big.Int) string {
+	// perform the calculating
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	var currentNodeID *big.Int
+	if n.NodeId != nil {
+		currentNodeID = n.NodeId
+	} else {
+		currentNodeID = hash(n.Address)
+	}
+
+	for i := keySize; i >= 1; i-- {
+		fingerAddr := n.FingerTable[i]
+		if fingerAddr == "" {
+			continue
+		}
+
+		fingerID := hash(fingerAddr)
+
+		if between(currentNodeID, fingerID, id, false) {
+			return fingerAddr
+		}
+	}
+	return n.Address
+}
+
+// logic handler for find successor of a given ID
+// using the iterative approach. If that ID belongs to (node - first successor), done
+// if not, invoke the find closet predecessor of the ID that this node know. Repeat
+// ID 64, node 8 -> call to furthest node that this node know : 51
+// 51 called again -> return 54 -> this node ask 54,... till complete
+func (n *Node) findSuccessor(id *big.Int) (string, error) {
+	currentCandidate := n.findClosetPredecessor(id)
+
+	// if the node n itself is the closet predecessor of that id ( n - id - first successor of n)
+	if currentCandidate == n.Address {
+		if len(n.Successors) == 0 {
+			return n.Address, nil
+		}
+		return n.Successors[0], nil
+	}
+
+	steps := 0
+
+	// Iterative Loop
+	for {
+		if steps > maxLookupSteps {
+			return "", fmt.Errorf("lookup failed, steps exceeded %d", maxLookupSteps)
+		}
+		steps++
+
+		// Iterative lookup
+		// get the first successor of the current candidate first
+		// (closet predecessor of id - id - first successor of closet predecessor of id)
+		candidateSuccessors, err := CallGetSuccessorList(currentCandidate)
+
+		if err != nil {
+			return "", fmt.Errorf("failed to contact %s: %v", currentCandidate, err)
+		}
+
+		if len(candidateSuccessors) == 0 {
+			return "", fmt.Errorf("node %s returned empty successor list", currentCandidate)
+		}
+
+		candID := hash(currentCandidate)
+		succID := hash(candidateSuccessors[0])
+
+		if between(candID, id, succID, true) {
+			return candidateSuccessors[0], nil
+		}
+
+		nextHop, err := CallFindClosetPredecessor(context.Background(), currentCandidate, id.String())
+		if err != nil {
+			return "", err
+		}
+
+		// Stuck Check
+		if nextHop == currentCandidate {
+			return candidateSuccessors[0], nil
+		}
+
+		currentCandidate = nextHop
 	}
 }
 
@@ -130,26 +219,33 @@ func (n *Node) GetAll(ctx context.Context, req *pb.GetAllRequest) (*pb.GetAllRes
 	return &pb.GetAllResponse{KeyValues: keyValues}, nil
 }
 
-// Find the closest (clockwise) predecessor node for an ID, this is called function.
-func (n *Node) FindClosestPreceding(ctx context.Context, req *pb.FindClosestPrecedingRequest) (*pb.FindClosestPrecedingResponse, error) {
-	n.mu.Lock()
-	defer n.mu.RUnlock()
-
+// FindClosetPredecessor RPC method
+func (n *Node) FindClosestPredecessor(ctx context.Context, req *pb.FindClosestPredecedingRequest) (*pb.FindClosestPredecedingResponse, error) {
 	targetID := new(big.Int)
 	targetID.SetString(req.Id, 10)
 
-	closestAddr := n.findClosetPredecessor(targetID)
-	return &pb.FindClosestPrecedingResponse{
-		Address: closestAddr,
+	closetAddr := n.findClosetPredecessor(targetID)
+	return &pb.FindClosestPredecedingResponse{
+		Address: closetAddr,
 	}, nil
 }
 
-// Called by another node
+// Handler for GetSuccessorList RPC call
+func (n *Node) GetSuccessorList(ctx context.Context, req *pb.GetSuccessorListRequest) (*pb.GetSuccessorListResponse, error) {
+	n.mu.Lock()
+	defer n.mu.RUnlock()
+
+	return &pb.GetSuccessorListResponse{
+		Successors: n.Successors,
+	}, nil
+}
+
+// Handler for FindSuccessor RPC call
 func (n *Node) FindSuccessor(ctx context.Context, req *pb.FindSuccessorRequest) (*pb.FindSuccessorResponse, error) {
 	id := new(big.Int)
 	_, ok := id.SetString(req.Id, 10)
 	if !ok {
-		return nil, fmt.Errorf("invalid ID format")
+		return nil, fmt.Errorf("[ERROR] Invalid ID format")
 	}
 	successorAddr, err := n.findSuccessor(id)
 	if err != nil {
@@ -160,116 +256,22 @@ func (n *Node) FindSuccessor(ctx context.Context, req *pb.FindSuccessorRequest) 
 	}, nil
 }
 
-// Get a list of successors first (successors of a node, not a key)
-func (n *Node) GetSuccessorList(ctx context.Context, rep *pb.GetSuccessorListRequest) (*pb.GetSuccessorListResponse, error) {
-	n.mu.Lock()
+// Handler GetPredecessor RPC Call
+func (n *Node) GetPredecessor(ctx context.Context, req *pb.GetPredecessorRequest) (*pb.GetPredecessorResponse, error) {
+	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return &pb.GetSuccessorListResponse{
-		Successors: n.Successors,
+	if n.Predecessor == "" {
+		return &pb.GetPredecessorResponse{
+			Address: "",
+		}, nil
+	}
+	return &pb.GetPredecessorResponse{
+		Address: n.Predecessor,
 	}, nil
 }
 
-// Find the successor of id, performed by node n
-// try to jump to closet predecessor of that id
-// this is the logic code
-func (n *Node) findSuccessor(id *big.Int) (string, error) {
-	currentCandidate := n.findClosetPredecessor(id)
-
-	// if the node n itself is the closet predecessor of that id ( n - id - first successor of n)
-	if currentCandidate == n.Address {
-		if len(n.Successors) == 0 {
-			return "", fmt.Errorf("node has no succesor")
-		}
-		return n.Successors[0], nil
-	}
-
-	steps := 0
-
-	for {
-		if steps > maxLookupSteps {
-			return "", fmt.Errorf("lookup failed, steps exceeded, allow %d", maxLookupSteps)
-		}
-		steps++
-		// Iterative lookup
-		// get the first successor of the current candidate first
-		// (closet predecessor of id - id - first successor of closet predecessor of id)
-		candidateSuccessor, _ := GetSuccessorList(currentCandidate)
-
-		if len(candidateSuccessor) == 0 {
-			return "", fmt.Errorf("node %s has empty successor list", currentCandidate)
-		}
-
-		candID := hash(currentCandidate)
-		succID := hash(candidateSuccessor[0])
-
-		if between(candID, id, succID, true) {
-			return candidateSuccessor[0], nil
-		}
-
-		// if not, jump to next closet predecessor
-		nextHop, err := FindClosetPredecessor(context.Background(), currentCandidate, id.String())
-		if err != nil {
-			return "", err
-		}
-
-		if nextHop == currentCandidate {
-			// If we are stuck on a node, return its successor as the best guess (maybe there is some link failure?)
-			return candidateSuccessor[0], nil
-		}
-
-		currentCandidate = nextHop
-	}
-}
-
-// find closet predecessor logic
-// check the finger table, if an entry i is between n and id, return that entry
-// else retrun n itself
-func (n *Node) findClosetPredecessor(id *big.Int) string {
-	n.mu.Lock()
-	defer n.mu.RUnlock()
-
-	currentID := hash(n.Address)
-
-	for i := keySize; i >= 1; i-- {
-		fingerAddr := n.FingerTable[i]
-		// skip the null entry
-		if fingerAddr == "" {
-			continue
-		}
-
-		fingerID := hash(fingerAddr)
-
-		if between(currentID, fingerID, id, false) {
-			return fingerAddr
-		}
-	}
-	return n.Address
-}
-
-// Check predecessor logic, check for alive one
-func (n *Node) checkPredecessor() {
-	n.mu.RLock()
-	predAddr := n.Predecessor
-	n.mu.RUnlock()
-
-	if predAddr == "" {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	err := PingNode(ctx, predAddr)
-
-	if err != nil {
-		log.Printf("Predecessor %s is dead. Clearing.", predAddr)
-		n.mu.Lock() // Lock for writing
-		n.Predecessor = ""
-		n.mu.Unlock()
-	}
-}
-
+// Handler Notify RPC Call
 func (n *Node) Notify(ctx context.Context, req *pb.NotifyRequest) (*pb.NotifyResponse, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -292,19 +294,26 @@ func (n *Node) Notify(ctx context.Context, req *pb.NotifyRequest) (*pb.NotifyRes
 	return &pb.NotifyResponse{}, nil
 }
 
-func (n *Node) GetPredecessor(ctx context.Context, req *pb.GetPredecessorRequest) (*pb.GetPredecessorResponse, error) {
+func (n *Node) checkPredecessor() {
 	n.mu.RLock()
-	defer n.mu.RUnlock()
+	predAddr := n.Predecessor
+	n.mu.RUnlock()
 
-	if n.Predecessor == "" {
-		return &pb.GetPredecessorResponse{
-			Address: "",
-		}, nil
+	if predAddr == "" {
+		return
 	}
 
-	return &pb.GetPredecessorResponse{
-		Address: n.Predecessor,
-	}, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := PingNode(ctx, predAddr)
+
+	if err != nil {
+		log.Printf("Predecessor %s is dead. Clearing.", predAddr)
+		n.mu.Lock() // Lock for writing
+		n.Predecessor = ""
+		n.mu.Unlock()
+	}
 }
 
 // Internal self function to stabilize after fault of successors
@@ -317,7 +326,7 @@ func (n *Node) stabilize() {
 	firstSuccessor := n.Successors[0]
 	n.mu.RUnlock()
 
-	x, err := GetPredecessor(firstSuccessor)
+	x, err := CallGetPredecessor(firstSuccessor)
 
 	if err == nil && x != "" {
 		if between(hash(n.Address), hash(x), hash(firstSuccessor), false) {
@@ -329,9 +338,9 @@ func (n *Node) stabilize() {
 		}
 	}
 
-	Notify(firstSuccessor, n.Address)
+	CallNotify(firstSuccessor, n.Address)
 
-	successorList, err := GetSuccessorList(firstSuccessor)
+	successorList, err := CallGetSuccessorList(firstSuccessor)
 	if err == nil {
 		n.mu.Lock()
 		defer n.mu.Unlock()
@@ -349,7 +358,6 @@ func (n *Node) stabilize() {
 }
 
 func (n *Node) fixFingers(nextFinger int) int {
-	// TODO: Student will implement this
 	nextFinger++
 	if nextFinger > keySize {
 		nextFinger = 1
