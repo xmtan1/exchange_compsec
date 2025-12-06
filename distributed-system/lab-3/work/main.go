@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"os"
 	"strings"
@@ -50,15 +51,31 @@ func resolveAddress(address string) string {
 }
 
 // StartServer starts the gRPC server for this node
-func StartServer(address string, nprime string) (*Node, error) {
+func StartServer(address string, nprime string, ts int, tff int, tcp int, r int, id string) (*Node, error) {
 	address = resolveAddress(address)
 
+	var NodeID *big.Int
+
+	if id != "" {
+		NodeID = new(big.Int)
+		if _, ok := NodeID.SetString(id, 16); !ok {
+			return nil, fmt.Errorf("invalid ID format: %s", id)
+		}
+	} else {
+		NodeID = hash(address)
+	}
+
 	node := &Node{
-		Address:     address,
-		FingerTable: make([]string, keySize+1),
-		Predecessor: "",
-		Successors:  nil,
-		Bucket:      make(map[string]string),
+		Address:            address,
+		ID:                 *NodeID,
+		FingerTable:        make([]string, keySize+1),
+		Predecessor:        "",
+		Successors:         nil,
+		Bucket:             make(map[string]string),
+		TimeStabilize:      time.Duration(ts) * time.Millisecond,
+		TimeFixFinger:      time.Duration(tff) * time.Millisecond,
+		TimeCheckPred:      time.Duration(tcp) * time.Millisecond,
+		NumberOfSuccessors: r,
 	}
 
 	// Are we the first node?
@@ -232,57 +249,65 @@ func RunShell(node *Node) {
 	}
 }
 
+// Helper to validate integer ranges
+func validateRange(name string, val, min, max int) {
+	if val < min || val > max {
+		log.Fatalf("Error: --%s must be between %d and %d (got %d)", name, min, max, val)
+	}
+}
+
 func main() {
 	// Parse command line flags
-	createCmd := flag.NewFlagSet("create", flag.ExitOnError)
-	createPort := createCmd.Int("port", 3410, "Port to listen on")
+	address := flag.String("a", "", "IP address to bind the chord")
+	port := flag.Int("p", 0, "Port to bind/listen")
 
-	joinCmd := flag.NewFlagSet("join", flag.ExitOnError)
-	joinPort := joinCmd.Int("port", 3410, "Port to listen on")
-	joinAddr := joinCmd.String("addr", "", "Address of existing node")
+	joinAddr := flag.String("ja", "", "Existing address of a chord server for this node to join")
+	joinPort := flag.Int("jp", 0, "Existing port of a chord server currently advertising to join")
 
-	if len(os.Args) < 2 {
-		fmt.Println("Expected 'create' or 'join' subcommand")
-		os.Exit(1)
+	ts := flag.Int("ts", 0, "Stabilize interval (ms)")
+	tff := flag.Int("tff", 0, "Fix finger interval (ms)")
+	tcp := flag.Int("tcp", 0, "Check predecessor interval (ms)")
+
+	r := flag.Int("r", 0, "Number of successors to maintain")
+
+	id := flag.String("i", "", "Manual identifier (SHA1 hex string)")
+
+	flag.Parse()
+
+	if *address == "" {
+		log.Fatal("Error: -a (Address) is required")
 	}
 
-	var node *Node
-	var address string
+	if *port == 0 {
+		log.Fatal("Error: -p (Port) is required")
+	}
 
-	switch os.Args[1] {
-	case "create":
-		err := createCmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatal(err)
-		}
+	validateRange("ts", *ts, 1, 60000)
+	validateRange("tff", *tff, 1, 60000)
+	validateRange("tcp", *tcp, 1, 60000)
+	validateRange("r", *r, 1, 32)
 
-		address = fmt.Sprintf(":%d", *createPort)
-		node, err = StartServer(address, "")
-		if err != nil {
-			log.Fatalf("Failed to create node: %v", err)
-		}
-		log.Printf("Created new ring with node at %s", node.Address)
+	if (*joinAddr != "" && *joinPort == 0) || (*joinAddr == "" && *joinPort != 0) {
+		log.Fatal("Error: Both --ja and --jp must be specified to join a ring")
+	}
 
-	case "join":
-		err := joinCmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatal(err)
-		}
+	bindAddress := fmt.Sprintf("%s:%d", *address, *port)
+	var remoteAddress string
 
-		if *joinAddr == "" {
-			log.Fatal("Join requires an address of an existing node")
-		}
+	if *joinAddr == "" {
+		remoteAddress = fmt.Sprintf("%s:%d", *joinAddr, *joinPort)
+	}
 
-		address = fmt.Sprintf(":%d", *joinPort)
-		node, err = StartServer(address, *joinAddr)
-		if err != nil {
-			log.Fatalf("Failed to join ring: %v", err)
-		}
-		log.Printf("Joined ring with node at %s", node.Address)
+	log.Printf("Starting a chord node at %s", bindAddress)
+	if remoteAddress != "" {
+		log.Printf("Join an existing chord network at %s", remoteAddress)
+	} else {
+		log.Printf("Starting a new chord ring...")
+	}
 
-	default:
-		fmt.Println("Expected 'create' or 'join' subcommand")
-		os.Exit(1)
+	node, err := StartServer(bindAddress, remoteAddress, *ts, *tff, *tcp, *r, *id)
+	if err != nil {
+		log.Fatalf("Failed to start server: %v", err)
 	}
 
 	// Run the interactive shell
