@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/big"
 	"sync"
+	"time"
 
 	pb "chord/protocol" // Update path as needed
 )
@@ -29,11 +30,17 @@ type Node struct {
 	mu sync.RWMutex
 
 	Address     string
+	ID          big.Int
 	Predecessor string
 	Successors  []string
 	FingerTable []string
 
 	Bucket map[string]string
+
+	TimeStabilize      time.Duration
+	TimeFixFinger      time.Duration
+	TimeCheckPred      time.Duration
+	NumberOfSuccessors int
 }
 
 // get the sha1 hash of a string as a bigint
