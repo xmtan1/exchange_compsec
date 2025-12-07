@@ -374,6 +374,9 @@ func (n *Node) fixFingers(nextFinger int) int {
 	return nextFinger
 }
 
+// small helper for printing state of node
+// Helper to print standard Node Information
+
 // format an address for printing
 func addr(a string) string {
 	if a == "" {
@@ -388,31 +391,55 @@ func (n *Node) dump() {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	fmt.Println()
-	fmt.Println("Dump: information about this node")
+	fmt.Println("\n[PrintState] Node Information")
+	fmt.Println("---------------------------------------------------------")
 
-	// predecessor and successor links
-	fmt.Println("Neighborhood")
-	fmt.Println("pred:   ", addr(n.Predecessor))
-	fmt.Println("self:   ", addr(n.Address))
-	for i, succ := range n.Successors {
-		fmt.Printf("succ  %d: %s\n", i, addr(succ))
+	// 1. SELF INFO
+	// We print this manually to ensure we show the ACTUAL n.ID
+	// (in case it was overridden by the -i flag) rather than just hash(n.Address).
+	fmt.Printf("Self:       %s (%s)\n", n.NodeId.String(), n.Address)
+
+	// 2. SUCCESSOR LIST
+	fmt.Println("\nSuccessor List:")
+	if len(n.Successors) == 0 {
+		fmt.Println("  (empty)")
 	}
-	fmt.Println()
-	fmt.Println("Finger table")
-	i := 1
-	for i <= keySize {
-		for i < keySize && n.FingerTable[i] == n.FingerTable[i+1] {
+	for i, succ := range n.Successors {
+		fmt.Printf("  [%d]: %s\n", i, addr(succ))
+	}
+
+	// 3. FINGER TABLE
+	fmt.Println("\nFinger Table:")
+	// Use compression logic to hide 100+ duplicate lines
+	for i := 1; i <= keySize; i++ {
+		entry := n.FingerTable[i]
+
+		// Look ahead: find how many consecutive entries are identical
+		start := i
+		for i < keySize && n.FingerTable[i+1] == entry {
 			i++
 		}
-		fmt.Printf(" [%3d]: %s\n", i, addr(n.FingerTable[i]))
-		i++
+		end := i
+
+		// Format the range (e.g., [1] or [1-150])
+		rangeLabel := fmt.Sprintf("[%d]", start)
+		if start != end {
+			rangeLabel = fmt.Sprintf("[%d-%d]", start, end)
+		}
+
+		fmt.Printf("  %-10s %s\n", rangeLabel, addr(entry))
 	}
-	fmt.Println()
-	fmt.Println("Data items")
-	for k, v := range n.Bucket {
-		s := fmt.Sprintf("%040x", hash(k))
-		fmt.Printf("    %s.. %s => %s\n", s[:8], k, v)
+
+	// 4. STORED FILES
+	fmt.Println("\nStored Files:")
+	if len(n.Bucket) == 0 {
+		fmt.Println("  (empty)")
 	}
-	fmt.Println()
+	for filename, content := range n.Bucket {
+		// Show filename and the key's hash ID
+		keyID := hash(filename)
+		shortID := fmt.Sprintf("%040x", keyID)
+		fmt.Printf("  %-15s %s.. (%d bytes)\n", filename, shortID[:8], len(content))
+	}
+	fmt.Println("---------------------------------------------------------")
 }

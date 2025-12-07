@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -157,15 +158,17 @@ func RunShell(node *Node) {
 		switch parts[0] {
 		case "help":
 			fmt.Println("Available commands:")
-			fmt.Println("  help              - Show this help message")
-			fmt.Println("  ping <address>    - Ping another node")
-			fmt.Println("                      (You can use :port for localhost)")
-			fmt.Println("  put <key> <value> <address> - Store a key-value pair on a node")
-			fmt.Println("  get <key> <address>         - Get a value for a key from a node")
-			fmt.Println("  delete <key> <address>      - Delete a key from a node")
-			fmt.Println("  getall <address>            - Get all key-value pairs from a node")
-			fmt.Println("  dump              - Display info about the current node")
-			fmt.Println("  quit              - Exit the program")
+			fmt.Println("  help                             - Show this help message")
+			fmt.Println("  ping <address>                   - Ping another node")
+			fmt.Println("  put <key> <value> <address>      - Store a key-value pair on a node")
+			fmt.Println("  get <key> <address>              - Get a value for a key from a node")
+			fmt.Println("  delete <key> <address>           - Delete a key from a node")
+			fmt.Println("  getall <address>                 - Get all key-value pairs from a node")
+			fmt.Println("  dump                             - Display info about the current node")
+			fmt.Println("  Lookup <filename>                - Find the owner and content of a file")
+			fmt.Println("  StoreFile <path>                 - Upload a local file to the ring")
+			fmt.Println("  PrintState                       - Display local state (same as dump)")
+			fmt.Println("  quit                             - Exit the program")
 
 		case "ping":
 			if len(parts) < 2 {
@@ -244,6 +247,25 @@ func RunShell(node *Node) {
 		case "dump":
 			node.dump()
 
+		case "Lookup":
+			if len(parts) < 2 {
+				fmt.Println("Usage: Lookup <filename>")
+				continue
+			}
+			filename := parts[1]
+			handleLookup(node, filename)
+
+		case "StoreFile":
+			if len(parts) < 2 {
+				fmt.Println("Usage: StoreFile <local_file_path>")
+				continue
+			}
+			path := parts[1]
+			HandlerStoreFile(node, path)
+
+		case "PrintState":
+			node.dump()
+
 		case "quit":
 			fmt.Println("Exiting...")
 			return
@@ -258,6 +280,57 @@ func RunShell(node *Node) {
 func validateRange(name string, val, min, max int) {
 	if val < min || val > max {
 		log.Fatalf("Error: --%s must be between %d and %d (got %d)", name, min, max, val)
+	}
+}
+
+// Helper function - lookip file
+func handleLookup(n *Node, filename string) {
+	lookupID := hash(filename)
+
+	ownerAddr, err := n.findSuccessor(lookupID)
+	if err != nil {
+		fmt.Printf("[ERROR] Find owner error: %v\n", err)
+		return
+	}
+
+	// persume that the ID is not set (optional)
+	ownerID := hash(ownerAddr)
+	fmt.Printf("[INFO] File '%s' is hosted by:\n", filename)
+	fmt.Printf("  Identifier: %s\n", ownerID.String())
+	fmt.Printf("  Address:    %s\n", ownerAddr)
+
+	content, err := GetValue(context.Background(), filename, ownerAddr)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to retrieving file: %v\n", err)
+		return
+	}
+
+	fmt.Printf("[Content] %s\n", content)
+}
+
+// Helper function - store file
+func HandlerStoreFile(n *Node, path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to read local file: %v\n", err)
+		return
+	}
+	content := string(data)
+	filename := filepath.Base(path)
+
+	keyID := hash(filename)
+	ownerAddr, err := n.findSuccessor(keyID)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to assign an owner %v\n", err)
+		return
+	}
+
+	fmt.Printf("[INFO] Storing file '%s' on node '%s'\n", filename, ownerAddr)
+	err = PutKeyValue(context.Background(), filename, content, ownerAddr)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to store file: %v\n", err)
+	} else {
+		fmt.Println("[INFO] Success.")
 	}
 }
 
