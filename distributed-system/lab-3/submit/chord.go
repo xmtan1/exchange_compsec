@@ -165,7 +165,7 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 
 // Ping implements the Ping RPC method
 func (n *Node) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	log.Print("ping: received request")
+	// log.Print("ping: received request")
 	return &pb.PingResponse{}, nil
 }
 
@@ -232,7 +232,7 @@ func (n *Node) FindClosestPredecessor(ctx context.Context, req *pb.FindClosestPr
 
 // Handler for GetSuccessorList RPC call
 func (n *Node) GetSuccessorList(ctx context.Context, req *pb.GetSuccessorListRequest) (*pb.GetSuccessorListResponse, error) {
-	n.mu.Lock()
+	n.mu.RLock()
 	defer n.mu.RUnlock()
 
 	return &pb.GetSuccessorListResponse{
