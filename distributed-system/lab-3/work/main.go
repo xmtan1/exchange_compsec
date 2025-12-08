@@ -294,7 +294,7 @@ func main() {
 	bindAddress := fmt.Sprintf("%s:%d", *address, *port)
 	var remoteAddress string
 
-	if *joinAddr == "" {
+	if *joinAddr != "" {
 		remoteAddress = fmt.Sprintf("%s:%d", *joinAddr, *joinPort)
 	}
 
