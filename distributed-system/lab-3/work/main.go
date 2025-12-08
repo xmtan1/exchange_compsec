@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -167,6 +168,9 @@ func RunShell(node *Node) {
 			fmt.Println("  get <key> <address>         - Get a value for a key from a node")
 			fmt.Println("  delete <key> <address>      - Delete a key from a node")
 			fmt.Println("  getall <address>            - Get all key-value pairs from a node")
+			fmt.Println("  StoreFile <path>           - Store a local text file into the Chord ring")
+			fmt.Println("  Lookup <filename>          - Lookup a file in the Chord ring and print its content")
+			fmt.Println("  PrintState                 - Print this node's Chord state")
 			fmt.Println("  dump              - Display info about the current node")
 			fmt.Println("  quit              - Exit the program")
 
@@ -243,6 +247,66 @@ func RunShell(node *Node) {
 					}
 				}
 			}
+
+		case "StoreFile":
+			if len(parts) < 2 {
+				fmt.Println("Usage: StoreFile <path>")
+				continue
+			}
+			path := parts[1]
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Printf("StoreFile: failed to read %s: %v\n", path, err)
+				continue
+			}
+
+			filename := filepath.Base(path)
+			id := hash(filename)
+
+			succ, err := node.findSuccessor(id)
+			if err != nil {
+				fmt.Printf("StoreFile: findSuccessor failed: %v\n", err)
+				continue
+			}
+
+			if err := PutKeyValue(ctx, filename, string(data), succ); err != nil {
+				fmt.Printf("StoreFile: RPC put to %s failed: %v\n", succ, err)
+				continue
+			}
+
+			fmt.Printf("Stored file %q at node %s\n", filename, succ)
+
+		case "Lookup":
+			if len(parts) < 2 {
+				fmt.Println("Usage: Lookup <filename>")
+				continue
+			}
+			filename := parts[1]
+			id := hash(filename)
+
+			succ, err := node.findSuccessor(id)
+			if err != nil {
+				fmt.Printf("Lookup: findSuccessor failed: %v\n", err)
+				continue
+			}
+
+			value, err := GetValue(ctx, filename, succ)
+			if err != nil {
+				fmt.Printf("Lookup: get from %s failed: %v\n", succ, err)
+				continue
+			}
+			if value == "" {
+				fmt.Printf("File %q not found (owner node %s)\n", filename, succ)
+				continue
+			}
+
+			fmt.Printf("Owner node: %s\n", addr(succ))
+			fmt.Println("File content:")
+			fmt.Println(value)
+
+		case "PrintState":
+			node.dump()
 
 		case "dump":
 			node.dump()
