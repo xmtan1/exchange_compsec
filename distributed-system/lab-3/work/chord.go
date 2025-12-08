@@ -272,3 +272,73 @@ func (n *Node) dump() {
 	}
 	fmt.Println()
 }
+
+// FindClosestPreceding implements the RPC: return this node's closest preceding node for id
+func (n *Node) FindClosestPreceding(ctx context.Context, req *pb.FindClosestPrecedingRequest) (*pb.FindClosestPrecedingResponse, error) {
+	id := new(big.Int)
+	// client 那边传的是 id.String()（十进制），所以这里用 base 10
+	if _, ok := id.SetString(req.Id, 10); !ok {
+		return nil, fmt.Errorf("invalid id: %s", req.Id)
+	}
+
+	addr := n.findClosetPredecessor(id)
+	return &pb.FindClosestPrecedingResponse{Address: addr}, nil
+}
+
+// FindSuccessor implements the RPC version of findSuccessor
+func (n *Node) FindSuccessor(ctx context.Context, req *pb.FindSuccessorRequest) (*pb.FindSuccessorResponse, error) {
+	id := new(big.Int)
+	if _, ok := id.SetString(req.Id, 10); !ok {
+		return nil, fmt.Errorf("invalid id: %s", req.Id)
+	}
+
+	addr, err := n.findSuccessor(id)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.FindSuccessorResponse{Address: addr}, nil
+}
+
+// GetSuccessorList returns this node's successor list
+func (n *Node) GetSuccessorList(ctx context.Context, req *pb.GetSuccessorListRequest) (*pb.GetSuccessorListResponse, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	succs := make([]string, len(n.Successors))
+	copy(succs, n.Successors)
+	return &pb.GetSuccessorListResponse{Successors: succs}, nil
+}
+
+// Notify implements Chord / notify(n')
+func (n *Node) Notify(ctx context.Context, req *pb.NotifyRequest) (*pb.NotifyResponse, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	cand := req.Address
+	if cand == "" {
+		return &pb.NotifyResponse{}, nil
+	}
+
+	if n.Predecessor == "" {
+		n.Predecessor = cand
+		return &pb.NotifyResponse{}, nil
+	}
+
+	selfID := hash(n.Address)
+	predID := hash(n.Predecessor)
+	candID := hash(cand)
+
+	if between(predID, candID, selfID, false) {
+		n.Predecessor = cand
+	}
+
+	return &pb.NotifyResponse{}, nil
+}
+
+// GetPredecessor returns this node's predecessor
+func (n *Node) GetPredecessor(ctx context.Context, req *pb.GetPredecessorRequest) (*pb.GetPredecessorResponse, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	return &pb.GetPredecessorResponse{Address: n.Predecessor}, nil
+}
