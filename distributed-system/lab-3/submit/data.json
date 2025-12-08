@@ -1,0 +1,52 @@
+[
+    {
+        "name": "Technical University of Denmark (DTU)",
+        "found_date": "1829",
+        "number_of_programs": "73 (21 BSc, 20 BEng, 32 MSc)",
+        "number_of_staff": "6,000",
+        "number_of_students": "13,500",
+        "number_of_nobel_winners": 1,
+        "size_area": "106 hectares (Lyngby Campus)",
+        "located": "Lyngby, Denmark"
+    },
+    {
+        "name": "Norwegian University of Science and Technology (NTNU)",
+        "found_date": "1996 (roots dating back to 1760)",
+        "number_of_programs": "60+ (International Master's)",
+        "number_of_staff": "9,000",
+        "number_of_students": "43,800",
+        "number_of_nobel_winners": 3,
+        "size_area": "N/A (Distributed campuses)",
+        "located": "Trondheim, Norway"
+    },
+    {
+        "name": "Chalmers University of Technology",
+        "found_date": "1829",
+        "number_of_programs": "70 (30 Bachelor's, 40 Master's)",
+        "number_of_staff": "3,235",
+        "number_of_students": "10,773",
+        "number_of_nobel_winners": 1,
+        "size_area": "N/A (Two main campuses)",
+        "located": "Gothenburg, Sweden"
+    },
+    {
+        "name": "KTH Royal Institute of Technology",
+        "found_date": "1827",
+        "number_of_programs": "94 (Undergraduate & Postgraduate)",
+        "number_of_staff": "3,600",
+        "number_of_students": "13,500",
+        "number_of_nobel_winners": 1,
+        "size_area": "36 hectares (approx. size of Old Town Stockholm)",
+        "located": "Stockholm, Sweden"
+    },
+    {
+        "name": "Aalto University",
+        "found_date": "2010 (merger)",
+        "number_of_programs": "100+ (Master's and Bachelor's)",
+        "number_of_staff": "4,884",
+        "number_of_students": "17,235",
+        "number_of_nobel_winners": 1,
+        "size_area": "107 hectares (Otaniemi Campus)",
+        "located": "Espoo, Finland"
+    }
+]
