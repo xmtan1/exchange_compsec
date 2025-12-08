@@ -186,14 +186,13 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 // check the finger table, if an entry i is between n and id, return that entry
 // else retrun n itself
 func (n *Node) findClosetPredecessor(id *big.Int) string {
-	n.mu.Lock()
+	n.mu.RLock()
 	defer n.mu.RUnlock()
 
 	currentID := hash(n.Address)
 
 	for i := keySize; i >= 1; i-- {
 		fingerAddr := n.FingerTable[i]
-		// skip the null entry
 		if fingerAddr == "" {
 			continue
 		}
