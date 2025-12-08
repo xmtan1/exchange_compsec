@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	defaultPort       = "3410"
-	successorListSize = 3
-	keySize           = sha1.Size * 8
-	maxLookupSteps    = 32
+	defaultPort = "3410"
+	// successorListSize = 3
+	keySize        = sha1.Size * 8
+	maxLookupSteps = 32
 )
 
 var (
@@ -53,16 +53,16 @@ func hash(elt string) *big.Int {
 // calculate the address of a point somewhere across the ring
 // this gets the target point for a given finger table entry
 // the successor of this point is the finger table entry
-func jump(address string, fingerentry int) *big.Int {
-	n := hash(address)
+// func jump(address string, fingerentry int) *big.Int {
+// 	n := hash(address)
 
-	fingerentryminus1 := big.NewInt(int64(fingerentry) - 1)
-	distance := new(big.Int).Exp(two, fingerentryminus1, nil)
+// 	fingerentryminus1 := big.NewInt(int64(fingerentry) - 1)
+// 	distance := new(big.Int).Exp(two, fingerentryminus1, nil)
 
-	sum := new(big.Int).Add(n, distance)
+// 	sum := new(big.Int).Add(n, distance)
 
-	return new(big.Int).Mod(sum, hashMod)
-}
+// 	return new(big.Int).Mod(sum, hashMod)
+// }
 
 // returns true if elt is between start and end, accounting for the right
 // if inclusive is true, it can match the end
@@ -295,6 +295,8 @@ func (n *Node) fixFingers(nextFinger int) int {
 	offset := new(big.Int).Exp(two, big.NewInt(int64(nextFinger-1)), nil)
 	target := new(big.Int).Add(selfID, offset)
 	target.Mod(target, hashMod)
+
+	// target := jump(n.Address, nextFinger)
 
 	addr, err := n.findSuccessor(target)
 	if err == nil && addr != "" {
