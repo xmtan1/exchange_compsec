@@ -232,6 +232,13 @@ class DP_DSL:
 
             self._used -= epsilon
 
+            # before the computation we consumed 3e (already paid for the partition)
+            # in each partition you applied the computation function (costs e)
+            # we will consume e for partion 1, e for partion 2,... so on we will actually consume
+            # e (upfront) + total e from all partitions
+            # you already paid e -> 2e left. But each computation will require at least e to run
+            # before it run, you temporary refund an amount = cost of a computation
+
             res = computation(k, partition_dataset)
 
             self._used = final_used_budget
