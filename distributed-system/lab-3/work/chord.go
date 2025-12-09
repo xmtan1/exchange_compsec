@@ -110,10 +110,10 @@ func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, er
 	defer n.mu.RUnlock()
 	value, exists := n.Bucket[req.Key]
 	if !exists {
-		log.Print("get: [", req.Key, "] miss")
+		log.Print("[WARN] Get: [", req.Key, "] miss")
 		return &pb.GetResponse{Value: ""}, nil
 	}
-	log.Print("get: [", req.Key, "] found [", value, "]")
+	log.Print("[INFO] Get: [", req.Key, "] found [", value, "]")
 	return &pb.GetResponse{Value: value}, nil
 }
 
@@ -122,10 +122,10 @@ func (n *Node) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteRes
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if _, exists := n.Bucket[req.Key]; exists {
-		log.Print("delete: found and deleted [", req.Key, "]")
+		log.Print("[LOG] Delete: found and deleted [", req.Key, "]")
 		delete(n.Bucket, req.Key)
 	} else {
-		log.Print("delete: not found [", req.Key, "]")
+		log.Print("[WARN] Delete: not found [", req.Key, "]")
 	}
 	return &pb.DeleteResponse{}, nil
 }
@@ -158,6 +158,9 @@ func (n *Node) replicateToSuccessors(key, value string) {
 
 	for i := 0; i < replicationNumber; i++ {
 		addr := n.Successors[i]
+		if addr == n.Address {
+			continue
+		}
 		err := CallPutReplica(addr, key, value)
 		if err != nil {
 			log.Printf("[ERROR] Falied to replica key %s to address %s: %v", key, addr, err)
@@ -174,7 +177,7 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 	// if the node n itself is the closet predecessor of that id ( n - id - first successor of n)
 	if currentCandidate == n.Address {
 		if len(n.Successors) == 0 {
-			return "", fmt.Errorf("node has no succesor")
+			return "", fmt.Errorf("[ERROR] Node has no succesor")
 		}
 		return n.Successors[0], nil
 	}
@@ -183,7 +186,7 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 
 	for {
 		if steps > maxLookupSteps {
-			return "", fmt.Errorf("lookup failed, steps exceeded, allow %d", maxLookupSteps)
+			return "", fmt.Errorf("[ERROR] Lookup failed, steps exceeded, allow %d", maxLookupSteps)
 		}
 		steps++
 		// Iterative lookup
@@ -192,7 +195,7 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 		candidateSuccessor, _ := CallGetSuccessorList(currentCandidate)
 
 		if len(candidateSuccessor) == 0 {
-			return "", fmt.Errorf("node %s has empty successor list", currentCandidate)
+			return "", fmt.Errorf("[ERROR] Node %s has empty successor list", currentCandidate)
 		}
 
 		candID := hash(currentCandidate)
@@ -255,7 +258,7 @@ func (n *Node) checkPredecessor() {
 	defer cancel()
 
 	if err := PingNode(ctx, pred); err != nil {
-		log.Printf("checkPredecessor: %s seems dead: %v, clearing predecessor", pred, err)
+		log.Printf("[INFO] CheckPredecessor: %s seems dead: %v, clearing predecessor", pred, err)
 		n.mu.Lock()
 		if n.Predecessor == pred {
 			n.Predecessor = ""
@@ -288,7 +291,7 @@ func (n *Node) stabilize() {
 		xID := hash(x)
 
 		if between(nID, xID, succID, false) {
-			log.Printf("stabilize: updating successor from %s to %s", succ, x)
+			log.Printf("[INFO] Stabilize: updating successor from %s to %s", succ, x)
 			succ = x
 			n.mu.Lock()
 			if len(n.Successors) == 0 {
@@ -362,7 +365,7 @@ func (n *Node) dump() {
 	defer n.mu.RUnlock()
 
 	fmt.Println()
-	fmt.Println("Dump: information about this node")
+	fmt.Println("[INFO] Dump: information about this node")
 
 	// Predecessor and Successor links
 	fmt.Println("Neighborhood")
@@ -397,10 +400,35 @@ func (n *Node) dump() {
 	fmt.Println("\nData items")
 	if len(n.Bucket) == 0 {
 		fmt.Println(" (empty)")
-	}
-	for k, v := range n.Bucket {
-		s := fmt.Sprintf("%040x", hash(k))
-		fmt.Printf("    %s.. %s => %s\n", s[:8], k, v)
+	} else {
+		// Prepare IDs for ownership check
+		// respects -i flag
+		var predID *big.Int
+		if n.Predecessor != "" {
+			predID = hash(n.Predecessor)
+		}
+
+		fmt.Printf(" %-20s | %-10s | %-10s | %s\n", "Filename", "Hash ID", "State", "Size")
+		fmt.Println(" ----------------------------------------------------------------")
+
+		for filename, content := range n.Bucket {
+			// 1. Calculate the file's Hash ID
+			fileID := hash(filename)
+			shortID := fmt.Sprintf("%040x", fileID)[:8] + ".."
+
+			state := "REPLICA"
+
+			if n.Predecessor == "" || n.Predecessor == n.Address {
+				state = "PRIMARY"
+			} else {
+				if between(predID, fileID, &n.ID, true) {
+					state = "PRIMARY"
+				}
+			}
+
+			fmt.Printf(" %-20s | %-10s | %-10s | %d bytes\n",
+				filename, shortID, state, len(content))
+		}
 	}
 	fmt.Println()
 }
@@ -411,7 +439,7 @@ func (n *Node) FindClosestPreceding(ctx context.Context, req *pb.FindClosestPrec
 	id := new(big.Int)
 	// client 那边传的是 id.String()（十进制），所以这里用 base 10
 	if _, ok := id.SetString(req.Id, 10); !ok {
-		return nil, fmt.Errorf("invalid id: %s", req.Id)
+		return nil, fmt.Errorf("[ERROR] Invalid id: %s", req.Id)
 	}
 
 	addr := n.findClosetPredecessor(id)
@@ -422,7 +450,7 @@ func (n *Node) FindClosestPreceding(ctx context.Context, req *pb.FindClosestPrec
 func (n *Node) FindSuccessor(ctx context.Context, req *pb.FindSuccessorRequest) (*pb.FindSuccessorResponse, error) {
 	id := new(big.Int)
 	if _, ok := id.SetString(req.Id, 10); !ok {
-		return nil, fmt.Errorf("invalid id: %s", req.Id)
+		return nil, fmt.Errorf("[ERROR] Invalid id: %s", req.Id)
 	}
 
 	addr, err := n.findSuccessor(id)

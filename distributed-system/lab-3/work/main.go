@@ -81,10 +81,10 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 
 	// Are we the first node?
 	if nprime == "" {
-		log.Print("StartServer: creating new ring")
+		log.Print("[INFO] StartServer: creating new ring")
 		node.Successors = []string{node.Address}
 	} else {
-		log.Print("StartServer: joining existing ring using ", nprime)
+		log.Print("[INFO] StartServer: joining existing ring using ", nprime)
 		// For now use the given address as our successor
 		nprime = resolveAddress(nprime)
 		node.Successors = []string{nprime}
@@ -108,14 +108,14 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 
 	lis, err := net.Listen("tcp", node.Address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %v", err)
+		return nil, fmt.Errorf("[ERROR] Failed to listen: %v", err)
 	}
 
 	// Start server in goroutine
-	log.Printf("Starting Chord node server on %s", node.Address)
+	log.Printf("[INFFO] Starting Chord node server on %s", node.Address)
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			log.Fatalf("[ERROR] Failed to serve: %v", err)
 		}
 	}()
 
@@ -172,20 +172,20 @@ func RunShell(node *Node) {
 		switch parts[0] {
 		case "help":
 			fmt.Println("Available commands:")
-			fmt.Println("  help              - Show this help message")
-			fmt.Println("  ping <address>    - Ping another node")
+			fmt.Println("  Help              - Show this help message")
+			fmt.Println("  Ping <address>    - Ping another node")
 			fmt.Println("                      (You can use :port for localhost)")
-			fmt.Println("  put <key> <value> <address> - Store a key-value pair on a node")
-			fmt.Println("  get <key> <address>         - Get a value for a key from a node")
-			fmt.Println("  delete <key> <address>      - Delete a key from a node")
-			fmt.Println("  getall <address>            - Get all key-value pairs from a node")
+			fmt.Println("  Put <key> <value> <address> - Store a key-value pair on a node")
+			fmt.Println("  Get <key> <address>         - Get a value for a key from a node")
+			fmt.Println("  Delete <key> <address>      - Delete a key from a node")
+			fmt.Println("  Getall <address>            - Get all key-value pairs from a node")
 			fmt.Println("  StoreFile <path>           - Store a local text file into the Chord ring")
 			fmt.Println("  Lookup <filename>          - Lookup a file in the Chord ring and print its content")
 			fmt.Println("  PrintState                 - Print this node's Chord state")
-			fmt.Println("  dump              - Display info about the current node")
-			fmt.Println("  quit              - Exit the program")
+			// fmt.Println("  dump              - Display info about the current node")
+			fmt.Println("  Quit              - Exit the program")
 
-		case "ping":
+		case "Ping":
 			if len(parts) < 2 {
 				fmt.Println("Usage: ping <address>")
 				continue
@@ -198,7 +198,7 @@ func RunShell(node *Node) {
 				fmt.Println("Ping successful")
 			}
 
-		case "put":
+		case "Put":
 			if len(parts) < 4 {
 				fmt.Println("Usage: put <key> <value> <address>")
 				continue
@@ -211,7 +211,7 @@ func RunShell(node *Node) {
 				fmt.Printf("Put successful: %s -> %s\n", parts[1], parts[2])
 			}
 
-		case "get":
+		case "Get":
 			if len(parts) < 3 {
 				fmt.Println("Usage: get <key> <address>")
 				continue
@@ -226,7 +226,7 @@ func RunShell(node *Node) {
 				fmt.Printf("%s -> %s\n", parts[1], value)
 			}
 
-		case "delete":
+		case "Delete":
 			if len(parts) < 3 {
 				fmt.Println("Usage: delete <key> <address>")
 				continue
@@ -239,7 +239,7 @@ func RunShell(node *Node) {
 				fmt.Printf("Delete request for key '%s' completed\n", parts[1])
 			}
 
-		case "getall":
+		case "Getall":
 			if len(parts) < 2 {
 				fmt.Println("Usage: getall <address>")
 				continue
@@ -322,7 +322,7 @@ func RunShell(node *Node) {
 		case "dump":
 			node.dump()
 
-		case "quit":
+		case "Quit":
 			fmt.Println("Exiting...")
 			return
 
