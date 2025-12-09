@@ -172,20 +172,20 @@ func RunShell(node *Node) {
 		switch parts[0] {
 		case "help":
 			fmt.Println("Available commands:")
-			fmt.Println("  Help              - Show this help message")
-			fmt.Println("  Ping <address>    - Ping another node")
+			fmt.Println("  help              - Show this help message")
+			fmt.Println("  ping <address>    - Ping another node")
 			fmt.Println("                      (You can use :port for localhost)")
-			fmt.Println("  Put <key> <value> <address> - Store a key-value pair on a node")
-			fmt.Println("  Get <key> <address>         - Get a value for a key from a node")
-			fmt.Println("  Delete <key> <address>      - Delete a key from a node")
-			fmt.Println("  Getall <address>            - Get all key-value pairs from a node")
-			fmt.Println("  StoreFile <path>           - Store a local text file into the Chord ring")
-			fmt.Println("  Lookup <filename>          - Lookup a file in the Chord ring and print its content")
-			fmt.Println("  PrintState                 - Print this node's Chord state")
+			fmt.Println("  put <key> <value> <address> - Store a key-value pair on a node")
+			fmt.Println("  get <key> <address>         - Get a value for a key from a node")
+			fmt.Println("  delete <key> <address>      - Delete a key from a node")
+			fmt.Println("  getall <address>            - Get all key-value pairs from a node")
+			fmt.Println("  storefile <path>           - Store a local text file into the Chord ring")
+			fmt.Println("  lookup <filename>          - Lookup a file in the Chord ring and print its content")
+			fmt.Println("  printstate                 - Print this node's Chord state")
 			// fmt.Println("  dump              - Display info about the current node")
 			fmt.Println("  Quit              - Exit the program")
 
-		case "Ping":
+		case "ping":
 			if len(parts) < 2 {
 				fmt.Println("Usage: ping <address>")
 				continue
@@ -198,7 +198,7 @@ func RunShell(node *Node) {
 				fmt.Println("Ping successful")
 			}
 
-		case "Put":
+		case "put":
 			if len(parts) < 4 {
 				fmt.Println("Usage: put <key> <value> <address>")
 				continue
@@ -211,7 +211,7 @@ func RunShell(node *Node) {
 				fmt.Printf("Put successful: %s -> %s\n", parts[1], parts[2])
 			}
 
-		case "Get":
+		case "get":
 			if len(parts) < 3 {
 				fmt.Println("Usage: get <key> <address>")
 				continue
@@ -226,7 +226,7 @@ func RunShell(node *Node) {
 				fmt.Printf("%s -> %s\n", parts[1], value)
 			}
 
-		case "Delete":
+		case "delete":
 			if len(parts) < 3 {
 				fmt.Println("Usage: delete <key> <address>")
 				continue
@@ -239,7 +239,7 @@ func RunShell(node *Node) {
 				fmt.Printf("Delete request for key '%s' completed\n", parts[1])
 			}
 
-		case "Getall":
+		case "getall":
 			if len(parts) < 2 {
 				fmt.Println("Usage: getall <address>")
 				continue
@@ -259,7 +259,7 @@ func RunShell(node *Node) {
 				}
 			}
 
-		case "StoreFile":
+		case "storefile":
 			if len(parts) < 2 {
 				fmt.Println("Usage: StoreFile <path>")
 				continue
@@ -288,7 +288,7 @@ func RunShell(node *Node) {
 
 			fmt.Printf("Stored file %q at node %s\n", filename, succ)
 
-		case "Lookup":
+		case "lookup":
 			if len(parts) < 2 {
 				fmt.Println("Usage: Lookup <filename>")
 				continue
@@ -316,13 +316,13 @@ func RunShell(node *Node) {
 			fmt.Println("File content:")
 			fmt.Println(value)
 
-		case "PrintState":
+		case "printstate":
 			node.dump()
 
 		case "dump":
 			node.dump()
 
-		case "Quit":
+		case "quit":
 			fmt.Println("Exiting...")
 			return
 

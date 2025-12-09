@@ -84,22 +84,17 @@ func (n *Node) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse,
 // adding additional check for replica data accros successors
 func (n *Node) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
 	n.mu.Lock()
-	defer n.mu.Unlock()
-
 	if n.Bucket == nil {
 		n.Bucket = make(map[string]string)
 	}
 	n.Bucket[req.Key] = req.Value
+	n.mu.Unlock()
 
 	if req.IsReplica {
-		log.Printf("[INFO] Store REPLICA for key %s", req.Key)
-	} else {
-		log.Printf("[INFO] Store PRIMARY for key %s", req.Key)
+		return &pb.PutResponse{}, nil
 	}
 
-	if !req.IsReplica {
-		go n.replicateToSuccessors(req.Key, req.Value)
-	}
+	go n.replicateToSuccessors(req.Key, req.Value)
 
 	return &pb.PutResponse{}, nil
 }
@@ -299,6 +294,9 @@ func (n *Node) stabilize() {
 
 	// if no successor alive -> only one in this ring
 	if !foundAlive {
+		n.mu.Lock()
+		n.Successors = []string{n.Address}
+		n.mu.Unlock()
 		return
 	}
 
@@ -308,6 +306,7 @@ func (n *Node) stabilize() {
 		if succIndex < len(n.Successors) {
 			n.Successors = n.Successors[succIndex:]
 		}
+		n.mu.Unlock()
 	}
 
 	x, err := CallGetPredecessor(succAddr)
@@ -411,13 +410,10 @@ func (n *Node) dump() {
 		}
 	}
 
-	// Data Items
 	fmt.Println("\nData items")
 	if len(n.Bucket) == 0 {
 		fmt.Println(" (empty)")
 	} else {
-		// Prepare IDs for ownership check
-		// respects -i flag
 		var predID *big.Int
 		if n.Predecessor != "" {
 			predID = hash(n.Predecessor)
@@ -427,22 +423,27 @@ func (n *Node) dump() {
 		fmt.Println(" ----------------------------------------------------------------")
 
 		for filename, content := range n.Bucket {
-			// 1. Calculate the file's Hash ID
+			// Calculate ID
 			fileID := hash(filename)
 			shortID := fmt.Sprintf("%040x", fileID)[:8] + ".."
 
+			// Determine State
 			state := "REPLICA"
-
 			if n.Predecessor == "" || n.Predecessor == n.Address {
 				state = "PRIMARY"
-			} else {
-				if between(predID, fileID, n.ID, true) {
-					state = "PRIMARY"
-				}
+			} else if between(predID, fileID, n.ID, true) {
+				state = "PRIMARY"
+			}
+
+			// Only owner can see the filename, otherwise, hash it
+			displayName := filename
+			if state == "REPLICA" {
+				// Show the Hash instead of the Name
+				displayName = fmt.Sprintf("<HASH:%s>", shortID[:6])
 			}
 
 			fmt.Printf(" %-20s | %-10s | %-10s | %d bytes\n",
-				filename, shortID, state, len(content))
+				displayName, shortID, state, len(content))
 		}
 	}
 	fmt.Println()
