@@ -30,7 +30,7 @@ type Node struct {
 	mu sync.RWMutex
 
 	Address     string
-	ID          big.Int
+	ID          *big.Int
 	Predecessor string
 	Successors  []string
 	FingerTable []string
@@ -277,47 +277,62 @@ func (n *Node) stabilize() {
 		n.mu.RUnlock()
 		return
 	}
-	succ := n.Successors[0]
+	succList := make([]string, len(n.Successors))
+	copy(succList, n.Successors)
+
 	n.mu.RUnlock()
 
-	if succ == "" {
-		return
-	}
+	// check first successor, skip dead node
+	var succAddr string
+	var succIndex int
+	foundAlive := false
 
-	x, err := CallGetPredecessor(succ)
-	if err == nil && x != "" && x != n.Address {
-		nID := hash(n.Address)
-		succID := hash(succ)
-		xID := hash(x)
-
-		if between(nID, xID, succID, false) {
-			log.Printf("[INFO] Stabilize: updating successor from %s to %s", succ, x)
-			succ = x
-			n.mu.Lock()
-			if len(n.Successors) == 0 {
-				n.Successors = []string{succ}
-			} else {
-				n.Successors[0] = succ
-			}
-			n.mu.Unlock()
+	for i, s := range succList {
+		_, err := CallGetPredecessor(s)
+		if err == nil {
+			succAddr = s
+			succIndex = i
+			foundAlive = true
+			break
 		}
 	}
 
-	_ = CallNotify(succ, n.Address)
-
-	succList, err := CallGetSuccessorList(succ)
-	if err != nil || len(succList) == 0 {
+	// if no successor alive -> only one in this ring
+	if !foundAlive {
 		return
 	}
 
-	newList := append([]string{succ}, succList...)
-	if len(newList) > n.NumberOfSuccessors {
-		newList = newList[:n.NumberOfSuccessors]
+	// if found someone but itself, because succ[0] == itself
+	if succIndex > 0 {
+		n.mu.Lock()
+		if succIndex < len(n.Successors) {
+			n.Successors = n.Successors[succIndex:]
+		}
 	}
 
-	n.mu.Lock()
-	n.Successors = newList
-	n.mu.Unlock()
+	x, err := CallGetPredecessor(succAddr)
+	if err == nil && x != "" {
+		nID := n.ID
+		succID := hash(succAddr)
+		xID := hash(x)
+
+		if between(nID, xID, succID, false) {
+			succAddr = x
+		}
+	}
+
+	_ = CallNotify(succAddr, n.Address)
+
+	remoteList, err := CallGetSuccessorList(succAddr)
+	if err == nil {
+		newList := append([]string{succAddr}, remoteList...)
+		if len(newList) > n.NumberOfSuccessors {
+			newList = newList[:n.NumberOfSuccessors]
+		}
+		n.mu.Lock()
+		n.Successors = newList
+		n.mu.Unlock()
+	}
 }
 
 func (n *Node) fixFingers(nextFinger int) int {
@@ -327,7 +342,7 @@ func (n *Node) fixFingers(nextFinger int) int {
 
 	// ID：n.ID + 2^(i-1)
 	n.mu.RLock()
-	selfID := new(big.Int).Set(&n.ID)
+	selfID := new(big.Int).Set(n.ID)
 	n.mu.RUnlock()
 
 	offset := new(big.Int).Exp(two, big.NewInt(int64(nextFinger-1)), nil)
@@ -421,7 +436,7 @@ func (n *Node) dump() {
 			if n.Predecessor == "" || n.Predecessor == n.Address {
 				state = "PRIMARY"
 			} else {
-				if between(predID, fileID, &n.ID, true) {
+				if between(predID, fileID, n.ID, true) {
 					state = "PRIMARY"
 				}
 			}

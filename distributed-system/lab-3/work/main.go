@@ -68,7 +68,7 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 
 	node := &Node{
 		Address:            address,
-		ID:                 *NodeID,
+		ID:                 NodeID,
 		FingerTable:        make([]string, keySize+1),
 		Predecessor:        "",
 		Successors:         nil,
