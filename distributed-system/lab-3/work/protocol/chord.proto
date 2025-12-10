@@ -47,6 +47,7 @@ message PingResponse {}
 message PutRequest {
   string key = 1;
   string value = 2;
+  bool is_replica = 3;
 }
 
 // The response message for Put

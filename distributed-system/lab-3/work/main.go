@@ -68,7 +68,7 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 
 	node := &Node{
 		Address:            address,
-		ID:                 *NodeID,
+		ID:                 NodeID,
 		FingerTable:        make([]string, keySize+1),
 		Predecessor:        "",
 		Successors:         nil,
@@ -81,19 +81,25 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 
 	// Are we the first node?
 	if nprime == "" {
-		log.Print("StartServer: creating new ring")
+		log.Print("[INFO] StartServer: creating new ring")
 		node.Successors = []string{node.Address}
 	} else {
-		log.Print("StartServer: joining existing ring using ", nprime)
+		log.Print("[INFO] StartServer: joining existing ring using ", nprime)
 		// For now use the given address as our successor
 		nprime = resolveAddress(nprime)
 		node.Successors = []string{nprime}
 		// TODO: use a GetAll request to populate our bucket
 		remoteBucket, err := GetAllKeyValues(context.Background(), nprime)
 		if err != nil {
-			log.Printf("[WARNING][GET DATA] Failed to get data from node %s: %v", nprime, err)
+			log.Printf("[WARNING]: Failed to fetch data: %v", err)
+			node.Bucket = make(map[string]string)
+		} else if remoteBucket != nil {
+			node.Bucket = remoteBucket
 		}
-		node.Bucket = remoteBucket
+
+		if node.Bucket == nil {
+			node.Bucket = make(map[string]string)
+		}
 	}
 
 	// Start listening for RPC calls
@@ -102,14 +108,14 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 
 	lis, err := net.Listen("tcp", node.Address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %v", err)
+		return nil, fmt.Errorf("[ERROR] Failed to listen: %v", err)
 	}
 
 	// Start server in goroutine
-	log.Printf("Starting Chord node server on %s", node.Address)
+	log.Printf("[INFFO] Starting Chord node server on %s", node.Address)
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			log.Fatalf("[ERROR] Failed to serve: %v", err)
 		}
 	}()
 
@@ -173,11 +179,11 @@ func RunShell(node *Node) {
 			fmt.Println("  get <key> <address>         - Get a value for a key from a node")
 			fmt.Println("  delete <key> <address>      - Delete a key from a node")
 			fmt.Println("  getall <address>            - Get all key-value pairs from a node")
-			fmt.Println("  StoreFile <path>           - Store a local text file into the Chord ring")
-			fmt.Println("  Lookup <filename>          - Lookup a file in the Chord ring and print its content")
-			fmt.Println("  PrintState                 - Print this node's Chord state")
-			fmt.Println("  dump              - Display info about the current node")
-			fmt.Println("  quit              - Exit the program")
+			fmt.Println("  storefile <path>           - Store a local text file into the Chord ring")
+			fmt.Println("  lookup <filename>          - Lookup a file in the Chord ring and print its content")
+			fmt.Println("  printstate                 - Print this node's Chord state")
+			// fmt.Println("  dump              - Display info about the current node")
+			fmt.Println("  Quit              - Exit the program")
 
 		case "ping":
 			if len(parts) < 2 {
@@ -253,7 +259,7 @@ func RunShell(node *Node) {
 				}
 			}
 
-		case "StoreFile":
+		case "storefile":
 			if len(parts) < 2 {
 				fmt.Println("Usage: StoreFile <path>")
 				continue
@@ -282,7 +288,7 @@ func RunShell(node *Node) {
 
 			fmt.Printf("Stored file %q at node %s\n", filename, succ)
 
-		case "Lookup":
+		case "lookup":
 			if len(parts) < 2 {
 				fmt.Println("Usage: Lookup <filename>")
 				continue
@@ -310,7 +316,7 @@ func RunShell(node *Node) {
 			fmt.Println("File content:")
 			fmt.Println(value)
 
-		case "PrintState":
+		case "printstate":
 			node.dump()
 
 		case "dump":

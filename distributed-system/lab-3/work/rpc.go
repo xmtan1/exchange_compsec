@@ -107,7 +107,8 @@ func GetAllKeyValues(ctx context.Context, address string) (map[string]string, er
 	return resp.KeyValues, nil
 }
 
-func FindClosetPredecessor(ctx context.Context, remoteAddr string, lookupID string) (string, error) {
+// RPC call (external) for find the closet predecessor of a look-up ID
+func CallFindClosetPredecessor(ctx context.Context, remoteAddr string, lookupID string) (string, error) {
 	remoteAddr = resolveAddress(remoteAddr)
 	conn, err := grpc.NewClient(remoteAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -125,7 +126,8 @@ func FindClosetPredecessor(ctx context.Context, remoteAddr string, lookupID stri
 	return resp.Address, nil
 }
 
-func Notify(address string, currentAddress string) error {
+// RPC call to notify an address that current address might be the predecessor
+func CallNotify(address string, currentAddress string) error {
 	address = resolveAddress(address)
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -140,7 +142,8 @@ func Notify(address string, currentAddress string) error {
 	return err
 }
 
-func GetPredecessor(address string) (string, error) {
+// RPC call to get predecessor of a node (definied by its address)
+func CallGetPredecessor(address string) (string, error) {
 	address = resolveAddress(address)
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -157,7 +160,7 @@ func GetPredecessor(address string) (string, error) {
 }
 
 // Get a successor list of a node (indicated by its address), essential for the maintenace
-func GetSuccessorList(address string) ([]string, error) {
+func CallGetSuccessorList(address string) ([]string, error) {
 	address = resolveAddress(address)
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -180,3 +183,20 @@ func GetSuccessorList(address string) ([]string, error) {
 }
 
 // Get a successor of a node (indicated by address)
+// Put data to replica
+func CallPutReplica(address, key, value string) error {
+	address = resolveAddress(address)
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client := pb.NewChordClient(conn)
+	_, err = client.Put(context.Background(), &pb.PutRequest{
+		Key:       key,
+		Value:     value,
+		IsReplica: true,
+	})
+	return err
+}

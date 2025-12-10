@@ -100,6 +100,7 @@ type PutRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	IsReplica     bool                   `protobuf:"varint,3,opt,name=is_replica,json=isReplica,proto3" json:"is_replica,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -146,6 +147,13 @@ func (x *PutRequest) GetValue() string {
 		return x.Value
 	}
 	return ""
+}
+
+func (x *PutRequest) GetIsReplica() bool {
+	if x != nil {
+		return x.IsReplica
+	}
+	return false
 }
 
 // The response message for Put
@@ -865,11 +873,13 @@ const file_protocol_chord_proto_rawDesc = "" +
 	"\n" +
 	"\x14protocol/chord.proto\x12\x05chord\"\r\n" +
 	"\vPingRequest\"\x0e\n" +
-	"\fPingResponse\"4\n" +
+	"\fPingResponse\"S\n" +
 	"\n" +
 	"PutRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\r\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x1d\n" +
+	"\n" +
+	"is_replica\x18\x03 \x01(\bR\tisReplica\"\r\n" +
 	"\vPutResponse\"\x1e\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
