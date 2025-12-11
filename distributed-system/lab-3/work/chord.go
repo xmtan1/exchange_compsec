@@ -222,7 +222,12 @@ func (n *Node) findClosetPredecessor(id *big.Int) string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	currentID := hash(n.Address)
+	var currentID *big.Int
+	if n.ID != nil {
+		currentID = n.ID
+	} else {
+		currentID = hash(n.Address)
+	}
 
 	for i := keySize; i >= 1; i-- {
 		fingerAddr := n.FingerTable[i]
@@ -503,7 +508,13 @@ func (n *Node) Notify(ctx context.Context, req *pb.NotifyRequest) (*pb.NotifyRes
 		return &pb.NotifyResponse{}, nil
 	}
 
-	selfID := hash(n.Address)
+	var selfID *big.Int
+
+	if n.ID != nil {
+		selfID = n.ID
+	} else {
+		selfID = hash(n.Address)
+	}
 	predID := hash(n.Predecessor)
 	candID := hash(cand)
 
