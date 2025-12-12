@@ -17,6 +17,7 @@ import (
 	pb "chord/protocol" // Update path as needed
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 var localaddress string
@@ -102,8 +103,15 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 		}
 	}
 
-	// Start listening for RPC calls
-	grpcServer := grpc.NewServer()
+	// loading TLS creds
+	creds, err := credentials.NewServerTLSFromFile("server.crt", "server.key")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load TLS keys: %v", err)
+	}
+
+	// Start listening for RPC calls(including creds)
+	grpcServer := grpc.NewServer(grpc.Creds(creds))
+
 	pb.RegisterChordServer(grpcServer, node)
 
 	lis, err := net.Listen("tcp", node.Address)
@@ -272,6 +280,13 @@ func RunShell(node *Node) {
 				continue
 			}
 
+			// encrypt
+			encryptedValue, err := encrypt(string(data))
+			if err != nil {
+				fmt.Printf("StoreFile: Encryption failed: %v\n", err)
+				continue
+			}
+
 			filename := filepath.Base(path)
 			id := hash(filename)
 
@@ -281,7 +296,7 @@ func RunShell(node *Node) {
 				continue
 			}
 
-			if err := PutKeyValue(ctx, filename, string(data), succ); err != nil {
+			if err := PutKeyValue(ctx, filename, encryptedValue, succ); err != nil {
 				fmt.Printf("StoreFile: RPC put to %s failed: %v\n", succ, err)
 				continue
 			}
@@ -327,8 +342,16 @@ func RunShell(node *Node) {
 				continue
 			}
 
+			// decrypt
+			decrypted, err := decrypt(value)
+			if err != nil {
+				fmt.Printf("Decryption failed (maybe key mismatch?): %v\n", err)
+				fmt.Println("Raw Content:", value)
+				continue
+			}
+
 			fmt.Println("File content retrieved successfully:")
-			fmt.Println(value)
+			fmt.Println(decrypted)
 
 		case "printstate":
 			node.dump()
