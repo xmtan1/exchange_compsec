@@ -17,6 +17,7 @@ import (
 	pb "chord/protocol" // Update path as needed
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 var localaddress string
@@ -102,8 +103,15 @@ func StartServer(address string, nprime string, ts int, tff int, tcp int, r int,
 		}
 	}
 
-	// Start listening for RPC calls
-	grpcServer := grpc.NewServer()
+	// loading TLS creds
+	creds, err := credentials.NewServerTLSFromFile("server.crt", "server.key")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load TLS keys: %v", err)
+	}
+
+	// Start listening for RPC calls(including creds)
+	grpcServer := grpc.NewServer(grpc.Creds(creds))
+
 	pb.RegisterChordServer(grpcServer, node)
 
 	lis, err := net.Listen("tcp", node.Address)
@@ -272,6 +280,13 @@ func RunShell(node *Node) {
 				continue
 			}
 
+			// encrypt
+			encryptedValue, err := encrypt(string(data))
+			if err != nil {
+				fmt.Printf("StoreFile: Encryption failed: %v\n", err)
+				continue
+			}
+
 			filename := filepath.Base(path)
 			id := hash(filename)
 
@@ -281,7 +296,7 @@ func RunShell(node *Node) {
 				continue
 			}
 
-			if err := PutKeyValue(ctx, filename, string(data), succ); err != nil {
+			if err := PutKeyValue(ctx, filename, encryptedValue, succ); err != nil {
 				fmt.Printf("StoreFile: RPC put to %s failed: %v\n", succ, err)
 				continue
 			}
@@ -296,25 +311,67 @@ func RunShell(node *Node) {
 			filename := parts[1]
 			id := hash(filename)
 
-			succ, err := node.findSuccessor(id)
+			// try to find Primary Owner
+			targetNode, err := node.findSuccessor(id)
 			if err != nil {
-				fmt.Printf("Lookup: findSuccessor failed: %v\n", err)
+				fmt.Printf("[ERROR] Lookup: findSuccessor failed: %v\n", err)
 				continue
 			}
 
-			value, err := GetValue(ctx, filename, succ)
-			if err != nil {
-				fmt.Printf("Lookup: get from %s failed: %v\n", succ, err)
-				continue
+			fmt.Printf("[INFO] Primary owner found: %s. Attempting retrieval...\n", targetNode)
+			value, err := GetValue(ctx, filename, targetNode)
+
+			// Fault Tolerance Read
+			if err != nil || value == "" {
+				fmt.Printf("[WARN] Primary (%s) failed or miss. Error: %v. Trying replicas...\n", targetNode, err)
+
+				// 1. get the primary node Hash ID
+				primaryID := hash(targetNode)
+
+				// 2. calc searchID = primaryID + 2^0 (same as +1)
+				one := big.NewInt(1)
+				searchID := new(big.Int).Add(primaryID, one)
+
+				// 3. lookup (Replica 1)
+				// findSuccessor will find next alive node automatically
+				replicaNode1, errRep1 := node.findSuccessor(searchID)
+
+				if errRep1 == nil && replicaNode1 != targetNode {
+					fmt.Printf("[INFO] Trying Replica 1 (Successor of Primary): %s...\n", replicaNode1)
+					value, err = GetValue(ctx, filename, replicaNode1)
+				}
+
+				// 4. if Replica 1 dead，try Replica 2
+				// cal searchID = Replica1_ID + 1
+				if err != nil || value == "" {
+					if replicaNode1 != "" {
+						rep1ID := hash(replicaNode1)
+						searchID2 := new(big.Int).Add(rep1ID, one)
+						replicaNode2, errRep2 := node.findSuccessor(searchID2)
+
+						if errRep2 == nil && replicaNode2 != replicaNode1 && replicaNode2 != targetNode {
+							fmt.Printf("[INFO] Replica 1 failed. Trying Replica 2: %s...\n", replicaNode2)
+							value, err = GetValue(ctx, filename, replicaNode2)
+						}
+					}
+				}
 			}
+
 			if value == "" {
-				fmt.Printf("File %q not found (owner node %s)\n", filename, succ)
+				fmt.Printf("[ERROR] File %q not found in ring (checked primary and replicas).\n", filename)
 				continue
 			}
 
-			fmt.Printf("Owner node: %s\n", addr(succ))
-			fmt.Println("File content:")
-			fmt.Println(value)
+			// decrypt
+			decrypted, err := decrypt(value)
+			if err != nil {
+				fmt.Printf("[ERROR] Decryption failed (maybe key mismatch?): %v\n", err)
+				fmt.Println("Raw Content:", value)
+				continue
+			}
+
+			fmt.Println("File content retrieved successfully:")
+			fmt.Println(decrypted)
 
 		case "printstate":
 			node.dump()

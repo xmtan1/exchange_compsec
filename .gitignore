@@ -7,3 +7,7 @@ build
 data-privacy/*/sandbox/*
 data-privacy/*/__pycache__/*
 
+*.key
+*.crt
+*.pem
+
