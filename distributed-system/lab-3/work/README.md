@@ -9,15 +9,15 @@ This project is arranged into 3 directories:
 
 From paper [Berkeley's Chord](https://people.eecs.berkeley.edu/~istoica/papers/2003/chord-ton.pdf), there are several "backbone" functions were implemented to ensure the 'Chord' features.
 
-### 1.1 Find closet preceding node of an `id`.
+### 1.1 Find closest preceding node of an `id`.
 
 This is the basic lookup feature. The function allows the chord to find the closest predecessor of an `id`. Example, we need to find an id `x` in the chord ring, this function will return the name (address) of the chord that comes before this `id` in the chord ring (in clockwise).
 
 ```Go
-// find closet predecessor logic
+// find closest predecessor logic
 // check the finger table, if an entry i is between n and id, return that entry
-// else retrun n itself
-func (n *Node) findClosetPredecessor(id *big.Int) string {
+// else return n itself
+func (n *Node) findclosestPredecessor(id *big.Int) string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
@@ -47,19 +47,19 @@ To ensure this process happens correctly, use the `mutex` of the chord ring to p
 
 ### 1.2. Find successor.
 
-As in the chord, an `id` can only be stored in the first successor of its. Which means, if the can find the closet predecessor of that `id`, we just take the first successor of newly found node -> allocate the `id` to that node.
+As in the chord, an `id` can only be stored in the first successor of its. Which means, if the can find the closest predecessor of that `id`, we just take the first successor of newly found node -> allocate the `id` to that node.
 
 ```Go
 // Find the successor of id, performed by node n
-// try to jump to closet predecessor of that id
+// try to jump to closest predecessor of that id
 // this is the logic code
 func (n *Node) findSuccessor(id *big.Int) (string, error) {
-	currentCandidate := n.findClosetPredecessor(id)
+	currentCandidate := n.findclosestPredecessor(id)
 
-	// if the node n itself is the closet predecessor of that id ( n - id - first successor of n)
+	// if the node n itself is the closest predecessor of that id ( n - id - first successor of n)
 	if currentCandidate == n.Address {
 		if len(n.Successors) == 0 {
-			return "", fmt.Errorf("[ERROR] Node has no succesor")
+			return "", fmt.Errorf("[ERROR] Node has no succesorss")
 		}
 		return n.Successors[0], nil
 	}
@@ -73,7 +73,7 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 		steps++
 		// Iterative lookup
 		// get the first successor of the current candidate first
-		// (closet predecessor of id - id - first successor of closet predecessor of id)
+		// (closest predecessor of id - id - first successor of closest predecessor of id)
 		candidateSuccessor, _ := CallGetSuccessorList(currentCandidate)
 
 		if len(candidateSuccessor) == 0 {
@@ -87,8 +87,8 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 			return candidateSuccessor[0], nil
 		}
 
-		// if not, jump to next closet predecessor
-		nextHop, err := CallFindClosetPredecessor(context.Background(), currentCandidate, id.String())
+		// if not, jump to next closest predecessor
+		nextHop, err := CallFindclosestPredecessor(context.Background(), currentCandidate, id.String())
 		if err != nil {
 			return "", err
 		}
@@ -114,6 +114,17 @@ Chord ring has an ability to re-distribite the contents during a node joing or n
 -`fixfinger` updates the finger table if needed, keeps the finger table always up-to-date.
 
 ## Part 2. Advanced features
+
+### 2.1. Data Security (Encryption)
+To ensure data privacy, files are not stored in plain text. We implemented **AES-GCM (Advanced Encryption Standard with Galois/Counter Mode)** for end-to-end encryption.
+- **Encryption:** When `StoreFile` is executed, the client encrypts the file content using a shared secret key before sending it via RPC.
+- **Decryption:** When `Lookup` retrieves data, the client decrypts the received ciphertext.
+- **Storage:** Nodes only store encrypted blobs. Even if a node is compromised and its `Bucket` is inspected, the data remains unreadable without the key.
+
+### 2.2. Transport Security (TLS)
+To prevent man-in-the-middle attacks and eavesdropping, we secured the communication channel.
+- **Certificates:** Each node loads TLS certificates (`server.crt` and `server.key`) upon startup.
+- **Secure gRPC:** We replaced `insecure.NewCredentials()` with `credentials.NewTLS(...)`. All internal Chord maintenance traffic (Stabilize, Notify) and client traffic (Put, Get) are encrypted over TLS.
 
 ### 2.3. Fault-tolerance
 
@@ -184,4 +195,63 @@ func (n *Node) replicateToSuccessors(key, value string) {
 		}
 	}
 }
+```
+In the `Lookup` command, if the client detects that the PRIMARY owner is down (connection error) or the data is missing, it triggers a recovery mechanism:
+
+1. The client calculates Hash(PrimaryID + 1).
+
+2. It queries the ring to find the successor of this new ID (which corresponds to the first REPLICA node).
+
+3. It attempts to retrieve the file from the replica. This ensures that as long as one replica survives, the user can still retrieve and decrypt the file.
+
+## Part 3. Automation Test & Cloud Deployment
+
+### 3.1 Automation Test
+To strictly verify the system's correctness—especially the Encryption and Fault Tolerance features—we developed an automated Python orchestrator script (`test_secure.py`).
+
+This script eliminates manual setup by automatically compiling the Go binary, generating TLS certificates, and managing node processes. It simulates a complete lifecycle scenario:
+
+The Test Scenario:
+
+* Bootstrap: Starts 3 Chord nodes locally (Ports 4170, 4171, 4172) with TLS enabled.
+
+* Secure Storage: Client stores a file (secret.txt). The script verifies that the data is encrypted before transmission.
+
+* Chaos (Simulate Crash): The script kills the Primary Node (4170) to force a network failure.
+
+* Failover & Recovery: The client is instructed to retrieve the file from the ring.
+
+* Verification: The client must detect the failure, locate a Replica node (4171 or 4172), and successfully decrypt the content.
+
+How to Run:
+
+```Bash
+
+python3 ./test_scenario.py
+```
+
+Verification Guide (What to observe): Please check the console output during Phase 5 (Retrieval) to confirm the advanced features are working:
+
+Evidence of Fault Tolerance: You will see the client switch to a backup node after the primary fails.
+
+```
+[WARN] Primary (...) failed or miss. Trying replicas... [INFO] Found data in replica...
+```
+
+Evidence of Decryption: Despite the node failure and encrypted storage, the final output will be the correct plaintext.
+
+```
+File content retrieved successfully: This is Top Secret Data!
+```
+
+### 3.2 Cloud Deployment
+
+login to node1 & node 2
+
+```bash
+ssh -i labsuser.pem ec2-user@xxx.xxx.xxx.xxx
+
+git clone https://github.com/TurlingXian/devops-docs.git
+
+
 ```
