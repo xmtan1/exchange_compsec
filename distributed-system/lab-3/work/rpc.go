@@ -2,18 +2,28 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 
 	pb "chord/protocol" // Update path as needed
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 )
+
+// get TLS option
+func getDialOpts() grpc.DialOption {
+	// InsecureSkipVerify: true
+	config := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	return grpc.WithTransportCredentials(credentials.NewTLS(config))
+}
 
 // PingNode sends a ping to another node
 func PingNode(ctx context.Context, address string) error {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
@@ -31,7 +41,7 @@ func PingNode(ctx context.Context, address string) error {
 // PutKeyValue sets a key-value pair on a node
 func PutKeyValue(ctx context.Context, key, value, address string) error {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
@@ -52,7 +62,7 @@ func PutKeyValue(ctx context.Context, key, value, address string) error {
 // GetValue retrieves a value for a key from a node
 func GetValue(ctx context.Context, key, address string) (string, error) {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return "", fmt.Errorf("failed to connect: %v", err)
 	}
@@ -72,7 +82,7 @@ func GetValue(ctx context.Context, key, address string) (string, error) {
 // DeleteKey deletes a key from a node
 func DeleteKey(ctx context.Context, key, address string) error {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
@@ -92,7 +102,7 @@ func DeleteKey(ctx context.Context, key, address string) error {
 // GetAllKeyValues retrieves all key-value pairs from a node
 func GetAllKeyValues(ctx context.Context, address string) (map[string]string, error) {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %v", err)
 	}
@@ -110,7 +120,7 @@ func GetAllKeyValues(ctx context.Context, address string) (map[string]string, er
 // RPC call (external) for find the closet predecessor of a look-up ID
 func CallFindClosetPredecessor(ctx context.Context, remoteAddr string, lookupID string) (string, error) {
 	remoteAddr = resolveAddress(remoteAddr)
-	conn, err := grpc.NewClient(remoteAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(remoteAddr, getDialOpts())
 	if err != nil {
 		return "", fmt.Errorf("failed to connect: %v", err)
 	}
@@ -129,7 +139,7 @@ func CallFindClosetPredecessor(ctx context.Context, remoteAddr string, lookupID 
 // RPC call to notify an address that current address might be the predecessor
 func CallNotify(address string, currentAddress string) error {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
@@ -145,7 +155,7 @@ func CallNotify(address string, currentAddress string) error {
 // RPC call to get predecessor of a node (definied by its address)
 func CallGetPredecessor(address string) (string, error) {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return "", fmt.Errorf("failed to connect: %v", err)
 	}
@@ -162,7 +172,7 @@ func CallGetPredecessor(address string) (string, error) {
 // Get a successor list of a node (indicated by its address), essential for the maintenace
 func CallGetSuccessorList(address string) ([]string, error) {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +196,7 @@ func CallGetSuccessorList(address string) ([]string, error) {
 // Put data to replica
 func CallPutReplica(address, key, value string) error {
 	address = resolveAddress(address)
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, getDialOpts())
 	if err != nil {
 		return err
 	}
