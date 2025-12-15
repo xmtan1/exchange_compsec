@@ -1,13 +1,18 @@
-# About this project
+# Distributed Chord DHT System
 
-This project is arranged into 3 directories:
-- `src` contains the inspiration from [Utah Chrord's example](https://cs.utahtech.edu/cs/3410/asst_chord.html).
-- `work` is the group work - main contents for submission.
-- `submit` contains some personal work, but is obsolete due to `work` completion.
+## 📂 Project Structure
 
-## Part 1. Basic functions of Chord.
+This project is organized into three main directories:
 
-From paper [Berkeley's Chord](https://people.eecs.berkeley.edu/~istoica/papers/2003/chord-ton.pdf), there are several "backbone" functions were implemented to ensure the 'Chord' features.
+- `src/`: Contains reference implementations inspired by Utah Chord's example.
+- `work/`: The main group submission containing the core source code and Dockerfiles.
+- `submit/`: Contains preliminary personal work (superseded by `work`).
+
+---
+
+## Part 1: Basic Functions of Chord
+
+Based on the Berkeley Chord Paper[Berkeley's Chord](https://people.eecs.berkeley.edu/~istoica/papers/2003/chord-ton.pdf), we implemented several "backbone" functions to ensure correct Distributed Hash Table (DHT) behavior.
 
 ### 1.1 Find closest preceding node of an `id`.
 
@@ -105,26 +110,34 @@ func (n *Node) findSuccessor(id *big.Int) (string, error) {
 
 The approach method of `find_successor` is "iterative". So that everytime a node has information about "next" lookup node, it will notify the original asking node and that node will continue asking the next on the list. This approach can avoid the case of "node failure" as in the "recursive" approach. For example, a node A asked node B about successor of ID x, then B tried to ask C, since B is not in charge of storing x,... in this scenario, A must wait for all asking steps to be completed, and if any node in this `chain` was down, maybe A will never know the location of x.
 
-### 1.3. Chord's self-stabilization
+**Why Iterative?** We chose an iterative approach over recursive. If a node in the chain fails during a recursive call, the original requester might hang indefinitely. In the iterative approach, the requester controls the process and can handle timeouts or failures more gracefully.
 
-Chord ring has an ability to re-distribite the contents during a node joing or node failure event. All nodes in this ring can also reach each others and fix the "broke connection". There are 3 functions to satify these constrains: `stabilize`, `notify` and `fixfinger`.
+### 1.3 Self-Stabilization
 
-- `stabilize` allows node to verify its status with n-immediate succesors (each node has a list of n-succesors). By calling this function, node can update the successor list (if any successor fails) or even check and update the predecessor.
-- `notify` is called when a node find its potenital successor. As above, when a node A has 3 successors B, C and D. If B failed, A will call `notify` to inform C that "now I'm your predecessor`, C after discarding B as its predecessor, will receive this notification and adopts A as its predecessor.
--`fixfinger` updates the finger table if needed, keeps the finger table always up-to-date.
+The Chord ring must handle dynamic joins and failures. Three key functions maintain ring integrity:
 
-## Part 2. Advanced features
+- **Stabilize**: Verifies the node's immediate successor and updates the list.
+- **Notify**: Informs a node of its potential new predecessor.
+- **FixFinger**: Periodically updates the Finger Table to ensure efficient lookups.
 
-### 2.1. Data Security (Encryption)
-To ensure data privacy, files are not stored in plain text. We implemented **AES-GCM (Advanced Encryption Standard with Galois/Counter Mode)** for end-to-end encryption.
-- **Encryption:** When `StoreFile` is executed, the client encrypts the file content using a shared secret key before sending it via RPC.
-- **Decryption:** When `Lookup` retrieves data, the client decrypts the received ciphertext.
-- **Storage:** Nodes only store encrypted blobs. Even if a node is compromised and its `Bucket` is inspected, the data remains unreadable without the key.
+---
 
-### 2.2. Transport Security (TLS)
-To prevent man-in-the-middle attacks and eavesdropping, we secured the communication channel.
-- **Certificates:** Each node loads TLS certificates (`server.crt` and `server.key`) upon startup.
-- **Secure gRPC:** We replaced `insecure.NewCredentials()` with `credentials.NewTLS(...)`. All internal Chord maintenance traffic (Stabilize, Notify) and client traffic (Put, Get) are encrypted over TLS.
+## Part 2: Advanced Features
+
+### 2.1 Data Security (Encryption)
+
+Files are never stored in plain text. We implemented **AES-GCM (Advanced Encryption Standard with Galois/Counter Mode)** for end-to-end encryption.
+
+- **Encryption**: The client encrypts the file content using a shared secret key before RPC transmission.
+- **Storage**: Nodes store only encrypted blobs. Even if a bucket is inspected, the data is unreadable without the key.
+- **Decryption**: The client decrypts the data upon retrieval (**Lookup**).
+
+### 2.2 Transport Security (TLS)
+
+To prevent Man-in-the-Middle (MITM) attacks, all communication is secured via TLS.
+
+- **Certificates**: Nodes load `server.crt` and `server.key` on startup.
+- **Secure gRPC**: We replaced `insecure.NewCredentials()` with `credentials.NewTLS(...)`. All traffic (Stabilize, Notify, Put, Get) is encrypted.
 
 ### 2.3. Fault-tolerance
 
@@ -204,54 +217,154 @@ In the `Lookup` command, if the client detects that the PRIMARY owner is down (c
 
 3. It attempts to retrieve the file from the replica. This ensures that as long as one replica survives, the user can still retrieve and decrypt the file.
 
-## Part 3. Automation Test & Cloud Deployment
 
-### 3.1 Automation Test
-To strictly verify the system's correctness—especially the Encryption and Fault Tolerance features—we developed an automated Python orchestrator script (`test_secure.py`).
+## Part 3: Automated Testing & Cloud Deployment
 
-This script eliminates manual setup by automatically compiling the Go binary, generating TLS certificates, and managing node processes. It simulates a complete lifecycle scenario:
+### 3.1 Automated Testing
 
-The Test Scenario:
+We developed a Python orchestrator (`test_scenario.py`) to verify encryption and fault tolerance without manual intervention.
 
-* Bootstrap: Starts 3 Chord nodes locally (Ports 4170, 4171, 4172) with TLS enabled.
+**The Test Scenario:**
 
-* Secure Storage: Client stores a file (secret.txt). The script verifies that the data is encrypted before transmission.
+1. **Bootstrap**: Starts 3 local Chord nodes (Ports `4170`, `4171`, `4172`).
+2. **Secure Storage**: Client encrypts and stores `secret.txt`.
+3. **Chaos**: The script kills the Primary Node (`4170`).
+4. **Recovery**: The client attempts to retrieve the file.
+5. **Verification**: The client must locate the Replica (`4171` or `4172`) and successfully decrypt the data.
 
-* Chaos (Simulate Crash): The script kills the Primary Node (4170) to force a network failure.
+**How to Run:**
 
-* Failover & Recovery: The client is instructed to retrieve the file from the ring.
-
-* Verification: The client must detect the failure, locate a Replica node (4171 or 4172), and successfully decrypt the content.
-
-How to Run:
-
-```Bash
-
+```bash
 python3 ./test_scenario.py
 ```
 
-Verification Guide (What to observe): Please check the console output during Phase 5 (Retrieval) to confirm the advanced features are working:
+### 3.2 Cloud Deployment (AWS EC2)
 
-Evidence of Fault Tolerance: You will see the client switch to a backup node after the primary fails.
+This section details deploying the Chord network across multiple AWS EC2 instances using Docker in **Host Network** mode.
 
-```
-[WARN] Primary (...) failed or miss. Trying replicas... [INFO] Found data in replica...
-```
+#### 📋 Prerequisites
 
-Evidence of Decryption: Despite the node failure and encrypted storage, the final output will be the correct plaintext.
+- **2 AWS EC2 Instances** (Amazon Linux 2023).
+- **Security Groups**: Allow TCP traffic on ports `3000-3010`.
 
-```
-File content retrieved successfully: This is Top Secret Data!
-```
+#### 🚀 Step 1: Environment Setup (All Nodes)
 
-### 3.2 Cloud Deployment
-
-login to node1 & node 2
+Run these commands on both EC2 instances.
 
 ```bash
-ssh -i labsuser.pem ec2-user@xxx.xxx.xxx.xxx
+# Connect to EC2
+ssh -i "labsuser.pem" ec2-user@<Public_IP>
 
+# Install Docker & Git
+sudo yum update -y && sudo yum install git -y
+sudo systemctl start docker && sudo systemctl enable docker
+
+# Clone & Build
 git clone https://github.com/TurlingXian/devops-docs.git
-
-
+cd ~/work
+sudo docker build -t chord-node .
 ```
+
+#### 🛡️ Step 2: AWS Networking
+
+Ensure the Security Group attached to your instances allows Inbound **Custom TCP** traffic on ports `3000-3010` from Anywhere (`0.0.0.0/0`) or the other instance's **Private IP**.
+
+#### 🌐 Step 3: Deployment (2-Node Setup)
+
+**On EC2 Instance A (Node 1 - Bootstrap):**
+
+```bash
+# Replace <Node1_Private_IP> with EC2 A's actual Private IP
+sudo docker run -d -it \
+  --name node1 \
+  --network host \
+  chord-node \
+  -a <Node1_Private_IP> \
+  -p 3000 \
+  --ts 3000 --tff 1000 --tcp 3000 -r 4
+```
+
+**On EC2 Instance B (Node 2 - Joiner):**
+
+```bash
+# Replace <Node2_Private_IP> with EC2 B's IP
+# Replace <Node1_Private_IP> with EC2 A's IP
+sudo docker run -d -it \
+  --name node2 \
+  --network host \
+  chord-node \
+  -a <Node2_Private_IP> \
+  -p 3000 \
+  --ja <Node1_Private_IP> \
+  --jp 3000 \
+  --ts 3000 --tff 1000 --tcp 3000 -r 4
+```
+
+#### ✅ Step 4: Verification (Cross-Instance Test)
+
+**Store on Node 1:**
+
+```bash
+sudo docker exec node1 sh -c "echo 'Cross Instance Data' > secret.txt"
+sudo docker attach node1
+> storefile secret.txt
+# Press Ctrl+P, Ctrl+Q to exit
+```
+
+**Retrieve on Node 2:**
+
+```bash
+sudo docker attach node2
+> lookup secret.txt
+```
+
+**Success Criteria:** The file content is displayed despite being stored on a different physical machine.
+
+---
+
+### 📺 3.3 Scaling to 8 Nodes (Hybrid Deployment)
+
+To demonstrate a robust ring, we deploy 8 nodes split across the two instances (4 nodes per EC2).
+
+#### 🟢 EC2 Instance A (Leader & Nodes 3, 4, 5)
+
+Use `tmux` to split your terminal if desired.
+
+```bash
+# Node 1 (Bootstrap) - Clean up old container first
+sudo docker rm -f node1
+sudo docker run -d -it --name node1 --network host chord-node -a <IP_A> -p 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+
+# Node 3
+sudo docker run -d -it --name node3 --network host chord-node -a <IP_A> -p 3001 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+
+# Node 4
+sudo docker run -d -it --name node4 --network host chord-node -a <IP_A> -p 3002 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+
+# Node 5
+sudo docker run -d -it --name node5 --network host chord-node -a <IP_A> -p 3003 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+```
+
+#### 🔵 EC2 Instance B (Joiners 2, 6, 7, 8)
+
+```bash
+# Node 2
+sudo docker run -d -it --name node2 --network host chord-node -a <IP_B> -p 3000 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+
+# Node 6
+sudo docker run -d -it --name node6 --network host chord-node -a <IP_B> -p 3001 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+
+# Node 7
+sudo docker run -d -it --name node7 --network host chord-node -a <IP_B> -p 3002 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+
+# Node 8
+sudo docker run -d -it --name node8 --network host chord-node -a <IP_B> -p 3003 --ja <IP_A> --jp 3000 --ts 3000 --tff 1000 --tcp 3000 -r 4
+```
+
+#### 📸 Verification
+
+To verify all 8 nodes are active:
+
+1. Open two terminal windows side-by-side.
+2. Run `sudo docker ps` in both.
+3. You should see 4 containers running on each machine.
