@@ -242,6 +242,7 @@ func (rf *Raft) startElection() {
 						}
 
 						// broadcast
+						rf.broadcastHeartBeat()
 					}
 				}
 			}
