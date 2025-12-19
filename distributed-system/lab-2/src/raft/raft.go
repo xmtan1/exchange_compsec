@@ -96,20 +96,6 @@ func (rf *Raft) resetElectionTimer() {
 	rf.electionTimeout = time.Duration(ms) * time.Millisecond
 }
 
-// clock for checking election time, hearing from leader,...
-func (rf *Raft) ticker() {
-	for rf.killed() == false {
-		// while raft node is still alive
-		rf.mu.Lock()
-		if rf.state != StateLeader && time.Since(rf.lastHeartBeat) > rf.electionTimeout {
-			// start election process
-			rf.startElection()
-		}
-		rf.mu.Unlock()
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
@@ -184,6 +170,18 @@ func (rf *Raft) broadcastHeartBeat() {
 
 			reply := AppendingEntriesReply{}
 
+			if rf.sendAppendEntries(server, &args, &reply) {
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+
+				if reply.Term > rf.currentTerm {
+					rf.currentTerm = reply.Term
+					rf.state = StateFollower
+					rf.votedFor = -1
+					rf.persist()
+				}
+			}
+
 		}(i)
 	}
 }
@@ -235,7 +233,7 @@ func (rf *Raft) startElection() {
 
 				if reply.VoteGranted {
 					votesReceived++
-					if votesReceived > len(rf.peers)/2 {
+					if rf.state == StateCandidate && votesReceived > len(rf.peers)/2 {
 						rf.state = StateLeader
 
 						for i := range rf.peers {
@@ -295,6 +293,39 @@ type RequestVoteArgs struct {
 }
 
 // RPC appending log handler
+func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntriesReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	defer rf.persist()
+
+	// false if incoming term is less than us
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
+	// false if term is different
+	// if args.Entries[args.PrevLogIndex].Term
+
+	if args.Term > rf.currentTerm {
+		// change to follower (because you're receiving from a "leader")
+		rf.currentTerm = args.Term
+		rf.state = StateFollower
+		rf.votedFor = -1
+	}
+
+	rf.lastHeartBeat = time.Now()
+
+	if rf.state == StateCandidate {
+		rf.state = StateFollower // force to become a follower even has larger term
+	}
+
+	reply.Term = rf.currentTerm
+	reply.Success = true
+
+	// log consistent 2B
+}
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
@@ -383,7 +414,8 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // used for send commands from leader to all
 // other members in this network
 func (rf *Raft) sendAppendEntries(server int, args *AppendingEntriesArgs, reply *AppendingEntriesReply) bool {
-
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -427,6 +459,7 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
+// clock for checking election time, hearing from leader,...
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
@@ -435,6 +468,12 @@ func (rf *Raft) ticker() {
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
+		rf.mu.Lock()
+		if rf.state != StateLeader && time.Since(rf.lastHeartBeat) > rf.electionTimeout {
+			// start election process
+			rf.startElection()
+		}
+		rf.mu.Unlock()
 		ms := 50 + (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
