@@ -19,15 +19,18 @@ package raft
 
 import (
 	//	"bytes"
+	"bytes"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
+// numerical comparison for state of a node
 const (
 	StateFollower  = 0
 	StateCandidate = 1
@@ -72,7 +75,7 @@ type Raft struct {
 	votedFor    int
 	log         []LogEntry
 
-	// violatile state
+	// violatile state (lost when killed)
 	commitIndex int
 	lastApplied int
 
@@ -86,7 +89,8 @@ type Raft struct {
 	applyCh       chan ApplyMsg
 
 	// for leader election
-	electionTimeout time.Duration
+	electionTimeout   time.Duration
+	lastBroadcastTime time.Time // fix the minor bug "warning: term changed even though there were no failures"
 }
 
 // reset timer each time (increase term if follower, reset to become candidate)\
@@ -116,9 +120,15 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+
+	rfState := w.Bytes()
+	rf.persister.Save(rfState, nil)
 	// e.Encode(rf.yyy)
 	// raftstate := w.Bytes()
 	// rf.persister.Save(raftstate, nil)
@@ -131,17 +141,22 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+
+	var curerntTerm int
+	var votedFor int
+	var logs []LogEntry
+
+	if d.Decode(&rf.currentTerm) != nil ||
+		d.Decode(&rf.votedFor) != nil ||
+		d.Decode(&rf.log) != nil {
+		// error
+	} else {
+		rf.currentTerm = curerntTerm
+		rf.votedFor = votedFor
+		rf.log = logs
+	}
 }
 
 // broadcast Heartbeat of the leader
@@ -152,6 +167,7 @@ func (rf *Raft) broadcastHeartBeat() {
 			continue
 		}
 
+		// start with go routine (concurrently)
 		go func(server int) {
 			rf.mu.Lock()
 			if rf.state != StateLeader {
@@ -174,14 +190,26 @@ func (rf *Raft) broadcastHeartBeat() {
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
 
+				if !reply.Success {
+					// entry's index conflict, jump backward, if negative, set to 1
+					rf.nextIndex[server] = rf.nextIndex[server] - 1
+					if rf.nextIndex[server] < 1 {
+						rf.nextIndex[server] = 1
+					} else {
+						// Success, update matchIndex
+						rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
+						rf.nextIndex[server] = rf.matchIndex[server] + 1
+					}
+				}
+
 				if reply.Term > rf.currentTerm {
+					// give up leadership if any neighbor has higher term
 					rf.currentTerm = reply.Term
 					rf.state = StateFollower
 					rf.votedFor = -1
 					rf.persist()
 				}
 			}
-
 		}(i)
 	}
 }
@@ -191,7 +219,7 @@ func (rf *Raft) broadcastHeartBeat() {
 func (rf *Raft) startElection() {
 	// changed internal state/properties, no need for mutex lock
 	rf.state = StateCandidate
-	rf.currentTerm++
+	rf.currentTerm++        // increase term (cause it is still running)
 	rf.votedFor = rf.me     // vote for self first
 	rf.persist()            // save state
 	rf.resetElectionTimer() // reset election time
@@ -220,9 +248,12 @@ func (rf *Raft) startElection() {
 				defer rf.mu.Unlock()
 
 				if rf.currentTerm != term || rf.state != StateCandidate {
+					// if timeout (split vote,...) and term was increased before receiving reply
+					// and somehow, it does not retain candidate state
 					return
 				}
 
+				// found a newer node
 				if reply.Term > rf.currentTerm {
 					rf.currentTerm = reply.Term
 					rf.state = StateFollower
@@ -231,6 +262,7 @@ func (rf *Raft) startElection() {
 					return
 				}
 
+				// successfully received vote
 				if reply.VoteGranted {
 					votesReceived++
 					if rf.state == StateCandidate && votesReceived > len(rf.peers)/2 {
@@ -316,6 +348,7 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 		rf.votedFor = -1
 	}
 
+	// sending log ~ heartbeat
 	rf.lastHeartBeat = time.Now()
 
 	if rf.state == StateCandidate {
@@ -323,9 +356,52 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 	}
 
 	reply.Term = rf.currentTerm
-	reply.Success = true
+	// reply.Success = true
 
 	// log consistent 2B
+	// 5.3 reply fail if log does not contain any entry at prevLogIndex with term
+	// matches to prevLogTerm
+	if len(rf.log)-1 < args.PrevLogIndex {
+		// log is too short
+		reply.Success = false
+		// maybe notify leader
+		return
+	}
+
+	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		// match index but not term (stale data?)
+		reply.Success = false
+		return
+	}
+
+	reply.Success = true
+
+	// if reply success, append log entries that are missing
+	for i, entry := range args.Entries {
+		index := args.PrevLogIndex + 1 + i
+
+		if index < len(rf.log) {
+			if rf.log[index].Term != entry.Term {
+				// conflict term
+				rf.log = rf.log[:index] // force update
+				rf.log = append(rf.log, entry)
+			}
+		} else {
+			rf.log = append(rf.log, entry)
+		}
+	}
+
+	// if leader commit index is larger than us, set the commit index
+	// to min of leader commit and the upcoming commit index
+	if args.LeaderCommit > rf.commitIndex {
+		lastNewIndex := args.PrevLogIndex + len(args.Entries)
+		if args.LeaderCommit < lastNewIndex {
+			rf.commitIndex = args.LeaderCommit
+		} else {
+			rf.commitIndex = lastNewIndex
+		}
+		//TODO: broadcast the message through the channel
+	}
 }
 
 // example RequestVote RPC reply structure.
@@ -337,6 +413,7 @@ type RequestVoteReply struct {
 }
 
 // example RequestVote RPC handler.
+// handler a vote request from upcoming message
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
@@ -344,18 +421,21 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	defer rf.persist()
 
+	// dont vote if coming < us
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		return
 	}
 
+	// convert to follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.state = StateFollower
 		rf.votedFor = -1
 	}
 
+	// send self-infomation with reply
 	reply.Term = rf.currentTerm
 	lastLogIndex := len(rf.log) - 1
 	lastLogTerm := rf.log[lastLogIndex].Term
@@ -363,6 +443,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	logOK := false
 
 	// check log before finally give vote
+	// log consistency
 	if args.LastLogTerm > lastLogTerm {
 		logOK = true
 	} else if args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex {
@@ -461,6 +542,8 @@ func (rf *Raft) killed() bool {
 }
 
 // clock for checking election time, hearing from leader,...
+// used the randomized to ensure every nodes have different wait time
+// reset the period each term to avoid split votes
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
@@ -470,13 +553,32 @@ func (rf *Raft) ticker() {
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		rf.mu.Lock()
+
+		// snapshot of currentstate
+		state := rf.state
+
+		if state == StateLeader {
+			// leader need to broadcast frequently
+			if time.Since(rf.lastBroadcastTime) > 100*time.Millisecond {
+				// using 100 since election in range [300,450] with 150 interval
+				rf.lastBroadcastTime = time.Now()
+				rf.mu.Unlock()
+				rf.broadcastHeartBeat()
+				rf.mu.Lock()
+			}
+		}
+
 		if rf.state != StateLeader && time.Since(rf.lastHeartBeat) > rf.electionTimeout {
 			// start election process
+			// if currently not leader and not hear from leader affter a time (candidate logic)
+
 			rf.startElection()
 		}
 		rf.mu.Unlock()
-		ms := 50 + (rand.Int63() % 300)
-		time.Sleep(time.Duration(ms) * time.Millisecond)
+
+		// sleep again
+		// ms := 50 + (rand.Int63() % 300)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
