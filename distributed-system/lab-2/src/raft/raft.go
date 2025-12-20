@@ -28,6 +28,7 @@ import (
 	"6.5840/labrpc"
 )
 
+// numerical comparison for state of a node
 const (
 	StateFollower  = 0
 	StateCandidate = 1
@@ -72,7 +73,7 @@ type Raft struct {
 	votedFor    int
 	log         []LogEntry
 
-	// violatile state
+	// violatile state (lost when killed)
 	commitIndex int
 	lastApplied int
 
@@ -152,6 +153,7 @@ func (rf *Raft) broadcastHeartBeat() {
 			continue
 		}
 
+		// start with go routine (concurrently)
 		go func(server int) {
 			rf.mu.Lock()
 			if rf.state != StateLeader {
@@ -175,6 +177,7 @@ func (rf *Raft) broadcastHeartBeat() {
 				defer rf.mu.Unlock()
 
 				if reply.Term > rf.currentTerm {
+					// give up leadership if any neighbor has higher term
 					rf.currentTerm = reply.Term
 					rf.state = StateFollower
 					rf.votedFor = -1
@@ -191,7 +194,7 @@ func (rf *Raft) broadcastHeartBeat() {
 func (rf *Raft) startElection() {
 	// changed internal state/properties, no need for mutex lock
 	rf.state = StateCandidate
-	rf.currentTerm++
+	rf.currentTerm++        // increase term (cause it is still running)
 	rf.votedFor = rf.me     // vote for self first
 	rf.persist()            // save state
 	rf.resetElectionTimer() // reset election time
@@ -220,9 +223,12 @@ func (rf *Raft) startElection() {
 				defer rf.mu.Unlock()
 
 				if rf.currentTerm != term || rf.state != StateCandidate {
+					// if timeout (split vote,...) and term was increased before receiving reply
+					// and somehow, it does not retain candidate state
 					return
 				}
 
+				// found a newer node
 				if reply.Term > rf.currentTerm {
 					rf.currentTerm = reply.Term
 					rf.state = StateFollower
@@ -231,6 +237,7 @@ func (rf *Raft) startElection() {
 					return
 				}
 
+				// successfully received vote
 				if reply.VoteGranted {
 					votesReceived++
 					if rf.state == StateCandidate && votesReceived > len(rf.peers)/2 {
@@ -337,6 +344,7 @@ type RequestVoteReply struct {
 }
 
 // example RequestVote RPC handler.
+// handler a vote request from upcoming message
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
@@ -344,18 +352,21 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	defer rf.persist()
 
+	// dont vote if coming < us
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		return
 	}
 
+	// convert to follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.state = StateFollower
 		rf.votedFor = -1
 	}
 
+	// send self-infomation with reply
 	reply.Term = rf.currentTerm
 	lastLogIndex := len(rf.log) - 1
 	lastLogTerm := rf.log[lastLogIndex].Term
@@ -363,6 +374,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	logOK := false
 
 	// check log before finally give vote
+	// log consistency
 	if args.LastLogTerm > lastLogTerm {
 		logOK = true
 	} else if args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex {
@@ -461,6 +473,8 @@ func (rf *Raft) killed() bool {
 }
 
 // clock for checking election time, hearing from leader,...
+// used the randomized to ensure every nodes have different wait time
+// reset the period each term to avoid split votes
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
@@ -470,11 +484,14 @@ func (rf *Raft) ticker() {
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		rf.mu.Lock()
+		// if currently not leader and not hear from leader affter a time
 		if rf.state != StateLeader && time.Since(rf.lastHeartBeat) > rf.electionTimeout {
 			// start election process
 			rf.startElection()
 		}
 		rf.mu.Unlock()
+
+		// sleep again
 		ms := 50 + (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
