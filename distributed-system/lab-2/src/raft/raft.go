@@ -87,6 +87,7 @@ type Raft struct {
 	state         int
 	lastHeartBeat time.Time
 	applyCh       chan ApplyMsg
+	applyCond     *sync.Cond
 
 	// for leader election
 	electionTimeout   time.Duration
@@ -401,6 +402,7 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 			rf.commitIndex = lastNewIndex
 		}
 		//TODO: broadcast the message through the channel
+		rf.applyCond.Broadcast()
 	}
 }
 
@@ -582,6 +584,44 @@ func (rf *Raft) ticker() {
 	}
 }
 
+// for the log consistency, the apply log should be handled separately
+// as suggested in the paper, the log (if missing) on the leader should
+// be later transferred,...
+func (rf *Raft) applier() {
+	for rf.killed() == false {
+		rf.mu.Lock()
+		for rf.lastApplied >= rf.commitIndex {
+			// already apply latest log, wait for new
+			rf.applyCond.Wait()
+		}
+
+		// if there is something that needs to be updated
+		firstIndex := rf.lastApplied + 1
+		lastIndex := rf.commitIndex
+		entries := make([]LogEntry, lastIndex-firstIndex+1) // space for the new comming logs
+		copy(entries, rf.log[firstIndex:lastIndex+1])
+
+		rf.mu.Unlock()
+
+		// reply client
+		for i, entry := range entries {
+			msg := ApplyMsg{
+				CommandValid: true,
+				Command:      entry.Command,
+				CommandIndex: firstIndex + i,
+			}
+			rf.applyCh <- msg
+		}
+
+		// update last apply after successfully send message
+		rf.mu.Lock()
+		if lastIndex > rf.lastApplied {
+			rf.lastApplied = lastIndex
+		}
+		rf.mu.Unlock()
+	}
+}
+
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays
@@ -617,12 +657,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.state = 0 // started as a follower
 	rf.lastHeartBeat = time.Now()
 	rf.applyCh = applyCh
+	rf.applyCond = sync.NewCond(&rf.mu)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
+
+	// start the applier goroutine
+	go rf.applier()
 
 	return rf
 }
