@@ -137,24 +137,23 @@ func (rf *Raft) persist() {
 
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
+	if data == nil || len(data) < 1 {
 		return
 	}
-	// Your code here (2C).
-	// Example:
+
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
 
-	var curerntTerm int
+	var currentTerm int
 	var votedFor int
 	var logs []LogEntry
 
-	if d.Decode(&rf.currentTerm) != nil ||
-		d.Decode(&rf.votedFor) != nil ||
-		d.Decode(&rf.log) != nil {
-		// error
+	if d.Decode(&currentTerm) != nil ||
+		d.Decode(&votedFor) != nil ||
+		d.Decode(&logs) != nil {
+		// DPrintf("Error decoding persistent state")
 	} else {
-		rf.currentTerm = curerntTerm
+		rf.currentTerm = currentTerm
 		rf.votedFor = votedFor
 		rf.log = logs
 	}
@@ -232,10 +231,32 @@ func (rf *Raft) broadcastHeartBeat() {
 					}
 				} else {
 					// not successfully got reply, maybe due to out-of-date log
-					// or we are not leader anymore,...
-					rf.nextIndex[server]--
-					if rf.nextIndex[server] < 1 {
-						rf.nextIndex[server] = 1
+					// or we are not leader anymore,... simply jump 1 index
+					// set to 1 is negative
+					// rf.nextIndex[server]--
+					// if rf.nextIndex[server] < 1 {
+					// 	rf.nextIndex[server] = 1
+					// }
+					// handle confict
+					if reply.ConflictTerm == -1 {
+						// no term conflict
+						rf.nextIndex[server] = reply.ConflictIndex
+					} else {
+						// find what term is conflict
+						lastIndexOfTerm := -1
+						for i := len(rf.log) - 1; i >= 0; i-- {
+							if rf.log[i].Term == reply.ConflictTerm {
+								lastIndexOfTerm = i
+								break
+							}
+						}
+
+						if lastIndexOfTerm != -1 {
+							// found
+							rf.nextIndex[server] = lastIndexOfTerm + 1
+						} else {
+							rf.nextIndex[server] = reply.ConflictIndex
+						}
 					}
 				}
 			}
@@ -367,8 +388,10 @@ type AppendingEntriesArgs struct {
 }
 
 type AppendingEntriesReply struct {
-	Term    int
-	Success bool
+	Term          int
+	ConflictTerm  int
+	ConflictIndex int
+	Success       bool
 }
 
 // example RequestVote RPC arguments structure.
@@ -402,6 +425,7 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 		rf.currentTerm = args.Term
 		rf.state = StateFollower
 		rf.votedFor = -1
+		rf.persist()
 	}
 
 	// sending log ~ heartbeat
@@ -421,12 +445,24 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 		// log is too short
 		reply.Success = false
 		// maybe notify leader
+		// reply with the conflict index
+		reply.ConflictIndex = len(rf.log)
+		reply.ConflictTerm = -1
 		return
 	}
 
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		// match index but not term (stale data?)
 		reply.Success = false
+		// reply with the conflict term (and included index)
+		reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+		for i := args.PrevLogIndex; i >= 0; i-- {
+			if rf.log[i].Term == reply.ConflictTerm {
+				reply.ConflictIndex = i
+			} else {
+				break
+			}
+		}
 		return
 	}
 
@@ -441,9 +477,11 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 				// conflict term
 				rf.log = rf.log[:index] // force update
 				rf.log = append(rf.log, entry)
+				rf.persist()
 			}
 		} else {
 			rf.log = append(rf.log, entry)
+			rf.persist()
 		}
 	}
 
@@ -490,6 +528,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.currentTerm = args.Term
 		rf.state = StateFollower
 		rf.votedFor = -1
+		rf.persist()
 	}
 
 	// send self-infomation with reply
@@ -512,6 +551,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true
 		rf.lastHeartBeat = time.Now()
+		rf.persist()
 	} else {
 		reply.VoteGranted = false
 	}
