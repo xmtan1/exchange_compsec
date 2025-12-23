@@ -227,9 +227,7 @@ func (rf *Raft) broadcastHeartBeat() {
 
 			// Normal AppendEntries logic
 			// Calculate physical index
-			physicalPrevIndex := prevLogIndex - rf.lastIncludedIndex
-
-			prevLogTerm := rf.log[physicalPrevIndex].Term
+			prevLogTerm := rf.getLogTerm(prevLogIndex)
 
 			// send entries
 			var entries []LogEntry
@@ -238,6 +236,9 @@ func (rf *Raft) broadcastHeartBeat() {
 				// Copy entries starting from nextIndex
 				// Physical index = nextIndex - lastIncludedIndex
 				nextPhys := rf.nextIndex[server] - rf.lastIncludedIndex
+				if nextPhys < 1 {
+					nextPhys = 1 // never send dummy entry at rf.log[0]
+				}
 				entries = make([]LogEntry, len(rf.log[nextPhys:]))
 				copy(entries, rf.log[nextPhys:])
 			}
@@ -565,6 +566,7 @@ func (rf *Raft) AppendEntries(args *AppendingEntriesArgs, reply *AppendingEntrie
 	// Case A: PrevLogIndex is behind our snapshot (very rare/outdated RPC)
 	if args.PrevLogIndex < rf.lastIncludedIndex {
 		reply.Success = false
+		reply.ConflictTerm = -1
 		reply.ConflictIndex = rf.lastIncludedIndex + 1
 		return
 	}
@@ -733,6 +735,10 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendingEntriesArgs, reply 
 
 func (rf *Raft) sendInstallSnapshot(server int) {
 	rf.mu.Lock()
+	if rf.state != StateLeader {
+		rf.mu.Unlock()
+		return
+	}
 	args := InstallSnapshotArgs{
 		Term:              rf.currentTerm,
 		LeaderId:          rf.me,
@@ -743,33 +749,35 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 	rf.mu.Unlock()
 
 	reply := InstallSnapshotReply{}
-
-	// Send RPC
-	if rf.peers[server].Call("Raft.InstallSnapshot", &args, &reply) {
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
-
-		// If term changed, step down
-		if reply.Term > rf.currentTerm {
-			rf.currentTerm = reply.Term
-			rf.state = StateFollower
-			rf.votedFor = -1
-			rf.persist()
-			return
-		}
-
-		// Validate state
-		if rf.state != StateLeader || rf.currentTerm != args.Term {
-			return
-		}
-
-		// Update matchIndex and nextIndex
-		if args.LastIncludedIndex > rf.matchIndex[server] {
-			rf.matchIndex[server] = args.LastIncludedIndex
-			rf.nextIndex[server] = rf.matchIndex[server] + 1
-			rf.checkCommit()
-		}
+	ok := rf.peers[server].Call("Raft.InstallSnapshot", &args, &reply)
+	if !ok {
+		return
 	}
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if reply.Term > rf.currentTerm {
+		rf.currentTerm = reply.Term
+		rf.state = StateFollower
+		rf.votedFor = -1
+		rf.persist()
+		return
+	}
+
+	if rf.state != StateLeader || rf.currentTerm != args.Term {
+		return
+	}
+
+	if rf.matchIndex[server] < args.LastIncludedIndex {
+		rf.matchIndex[server] = args.LastIncludedIndex
+	}
+	if rf.nextIndex[server] < args.LastIncludedIndex+1 {
+		rf.nextIndex[server] = args.LastIncludedIndex + 1
+	}
+
+	rf.checkCommit()
+	go rf.broadcastHeartBeat()
 }
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
@@ -789,13 +797,15 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		rf.votedFor = -1
 		rf.persist()
 	}
+	reply.Term = rf.currentTerm
 
 	if rf.state == StateCandidate {
 		rf.state = StateFollower
 	}
 
 	// Reset election timer (heartbeat logic)
-	rf.lastHeartBeat = time.Now()
+	// rf.lastHeartBeat = time.Now()
+	rf.resetElectionTimer() // more stable
 
 	// 1. Check if the snapshot is older than what we already have
 	if args.LastIncludedIndex <= rf.lastIncludedIndex {
@@ -836,7 +846,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.lastIncludedTerm = args.LastIncludedTerm
 
 	// Update commitIndex if necessary
-	if args.LastIncludedIndex > rf.commitIndex {
+	if rf.commitIndex < args.LastIncludedIndex {
 		rf.commitIndex = args.LastIncludedIndex
 	}
 
