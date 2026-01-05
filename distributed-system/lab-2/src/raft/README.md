@@ -218,3 +218,104 @@ The reading, should pass the value to temporary variables first, perform check t
 		rf.lastIncludedTerm = lastIncludedTerm
 	}
 ```
+
+### 2.2. Log Compaction (Snapshots)
+
+As the Raft log grows indefinitely, it consumes memory and increases the time required for replay during a restart. To address this, We implemented the **Snapshot mechanism (Part 2D)**, which allows the service to compact its state and discard obsolete log entries.
+
+#### 1. Snapshotting and Log Truncation
+
+When the service (upper layer) decides the log has grown too large, it calls `Snapshot()`. The Raft instance must then:
+
+- Update `lastIncludedIndex` and `lastIncludedTerm` to record the point of truncation.  
+- Discard log entries preceding the snapshot index.  
+- Persist both the Raft state and the snapshot data atomically.
+
+A critical design choice here is retaining a **dummy entry** at the beginning of the log slice. This simplifies the logic for `AppendEntries` consistency checks, as we can always access the term of the last included entry.
+
+```go
+// the service says it has created a snapshot that has
+// all info up to and including index.
+func (rf *Raft) Snapshot(index int, snapshot []byte) {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
+    // Validation: Ignore if snapshot is older than current state
+    if index <= rf.lastIncludedIndex {
+        return
+    }
+
+    // Calculate offset to trim the log
+    // rf.log[0] is the dummy entry or the last included entry
+    cutoffOffset := index - rf.lastIncludedIndex
+    
+    // Save the term for the snapshot boundary
+    rf.lastIncludedTerm = rf.log[cutoffOffset].Term
+    rf.lastIncludedIndex = index
+
+    // Create new log slice: [DummyEntry(SnapshotTerm), ...RemainingLogs]
+    newLog := make([]LogEntry, 0)
+    newLog = append(newLog, LogEntry{Term: rf.lastIncludedTerm, Command: nil})
+    
+    // Append remaining entries if any exist
+    if cutoffOffset+1 < len(rf.log) {
+        newLog = append(newLog, rf.log[cutoffOffset+1:]...)
+    }
+    rf.log = newLog
+
+    // Atomically save Raft state and the Snapshot data
+    // ... (encoding logic)
+    rf.persister.Save(w.Bytes(), snapshot)
+}
+```
+
+#### 2. Coordinate Transformation (Logical vs. Physical Index)
+
+Implementing snapshots introduces a discrepancy between the **Logical Index** (the absolute index in the Raft log) and the **Physical Index** (the index in the Go slice `rf.log`).
+
+To prevent *index out of range* panics and maintain logic clarity, helper functions abstract this mapping:
+
+- **Physical Index** = Logical Index − `rf.lastIncludedIndex`  
+- **Logical Index** = Physical Index + `rf.lastIncludedIndex`
+
+```go
+// Helper to get term by logical index
+func (rf *Raft) getLogTerm(logicalIndex int) int {
+    if logicalIndex < rf.lastIncludedIndex {
+        return -1 // Should not happen in normal logic or handled as error
+    }
+    if logicalIndex == rf.lastIncludedIndex {
+        return rf.lastIncludedTerm
+    }
+    return rf.log[logicalIndex-rf.lastIncludedIndex].Term
+}
+```
+
+This abstraction allows the core logic in `AppendEntries` and `RequestVote` to remain relatively clean, as they interact with logical indices while the helpers handle the underlying slice manipulation.
+
+#### 3. InstallSnapshot RPC
+
+When a leader tries to synchronize with a follower that is lagging behind, the leader may find that the `nextIndex` for that follower has already been discarded (snapshotted) in the leader's log. In this case, standard `AppendEntries` is impossible.
+
+The leader detects this condition in `broadcastHeartBeat` and switches to sending an `InstallSnapshot` RPC:
+
+```go
+// Inside broadcastHeartBeat
+prevLogIndex := rf.nextIndex[server] - 1
+
+// If the follower needs a log entry that we have discarded...
+if prevLogIndex < rf.lastIncludedIndex {
+    rf.mu.Unlock()
+    rf.sendInstallSnapshot(server)
+    return
+}
+```
+
+On the receiver side (`InstallSnapshot` handler), the follower must:
+
+- Verify the term.  
+- Decide whether to discard its entire log or retain a suffix (if the snapshot overlaps with existing logs).  
+- Update `lastIncludedIndex` and `commitIndex`.  
+- Push the snapshot to the `applyCh` so the service can restore the state machine.
+
+This ensures that even if a follower disconnects for a long time, it can quickly catch up using the leader's snapshot rather than replaying the entire history.
