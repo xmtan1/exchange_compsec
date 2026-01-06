@@ -1,2 +1,6 @@
-I've forked our Distributed Systems group repository. I'll be focusing my changes on the relevant files. 
-I plan to use the alison branch for my individual work, and the main branch for the group work.
+# Introduction
+
+This repository is a warehouse for all courses I have taken (up to the last commit) from MSC Computer Systems & Cybersecurity from Chalmers University of Technology.
+Each folder corresponses to a course with source code and implemented code (by me and my teammates) inside.
+There are some famous assignments like "customized bash shell", "reconstruction attack - small scale" and distributed systems (map reduce, raft and chord ring).
+Because each course requires a different programming language, the source code maybe not "clean" and look "amateru", so if you want to use for inspiration, please add your style.
