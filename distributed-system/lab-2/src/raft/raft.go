@@ -164,9 +164,6 @@ func (rf *Raft) persist() {
 
 	rfState := w.Bytes()
 	rf.persister.Save(rfState, rf.persister.ReadSnapshot())
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
 }
 
 // restore previously persisted state.
