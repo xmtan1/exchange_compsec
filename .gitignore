@@ -11,3 +11,4 @@ data-privacy/*/__pycache__/*
 *.crt
 *.pem
 
+computer-security/lab/lab-1/*
