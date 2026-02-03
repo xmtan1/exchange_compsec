@@ -12,7 +12,7 @@
 #include <sys/types.h>
 #include <crypt.h>
 /* Uncomment next line in step 2 */
-/* #include "pwent.h" */
+#include "pwent.h" 
 
 #define TRUE 1
 #define FALSE 0
@@ -24,9 +24,13 @@ void sighandler() {
 	/* see 'man 2 signal' */
 }
 
+// helper function to query username from passwd db
+int getusername(char *username);
+
 int main(int argc, char *argv[]) {
 
-	struct passwd *passwddata; /* this has to be redefined in step 2 */
+	// using struct from file pwent.h
+	// struct mypwent *passwddata; /* this has to be redefined in step 2 */
 	/* see pwent.h */
 
 	char important1[LENGTH] = "**IMPORTANT 1**";
@@ -66,22 +70,42 @@ int main(int argc, char *argv[]) {
 		 		LENGTH - 1, LENGTH - 1, important2);
 
 		user_pass = getpass(prompt);
-		passwddata = getpwnam(user);
 
-		if (passwddata != NULL) {
-			/* You have to encrypt user_pass for this to work */
-			/* Don't forget to include the salt */
+		// this method is only to get from a pre-define database, not suitable for step 2
+		// here this program will use a simple db (struct) for encrypted stored passwd
 
-			if (!strcmp(user_pass, passwddata->pw_passwd)) {
+		// passwddata = getpwnam(user);
 
-				printf(" You're in !\n");
+		// if (passwddata != NULL) {
+		// 	/* You have to encrypt user_pass for this to work */
+		// 	/* Don't forget to include the salt */
 
-				/*  check UID, see setuid(2) */
-				/*  start a shell, use execve(2) */
+		// 	if (!strcmp(user_pass, passwddata->pw_passwd)) {
 
-			}
+		// 		printf(" You're in !\n");
+
+		// 		/*  check UID, see setuid(2) */
+		// 		/*  start a shell, use execve(2) */
+
+		// 	}
+		// 
+		if(getusername(user) == 0){
+			printf("There is no entry in the DB matched with this user.\n");
+		} else {
+			printf("Matched user...\n");
+			printf("%s\n", user_pass);
 		}
 		printf("Login Incorrect \n");
 	}
 	return 0;
+}
+
+int getusername(char *username){
+	mypwent *resent;
+
+	resent = mygetpwnam(username);
+	if (resent == NULL){
+		return 0;
+	}
+	return 1;
 }
