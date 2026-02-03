@@ -1,0 +1,14 @@
+{
+  "files.associations": {
+    "*.s": "arm"
+  },
+  "errorLens.messageBackgroundMode": "line",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/inc",
+    "${workspaceFolder}/lib/md407/inc",
+    "${workspaceFolder}/lib/tinytimber/inc"
+  ],
+  "C_Cpp.default.intelliSenseMode": "gcc-arm",
+  "C_Cpp.errorSquiggles": "disabled",
+  "mdx07-templates.appName": "realtime-system"
+}
