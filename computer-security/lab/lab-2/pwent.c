@@ -10,34 +10,41 @@
 
 #include "pwent.h"
 
-#define LINE_BUFFER_LENGTH  1000
+#define LINE_BUFFER_LENGTH 1000
 
 /*
  Return pointer to password entry for specified user.
- 
+
  Upon error, or if the user couldn't be found, NULL is returned.
- 
+
  Note: The returned pointer points to static data.
  */
-mypwent *mygetpwnam(char *name) {
+mypwent *mygetpwnam(char *name)
+{
 	FILE *file;
 	char buffer[LINE_BUFFER_LENGTH];
 
+	// printf("Comparison name: %s", name);
+
 	static char pwname[LINE_BUFFER_LENGTH], passwd[LINE_BUFFER_LENGTH],
-			passwd_salt[LINE_BUFFER_LENGTH];
-	static mypwent ent = { pwname, 0, passwd, passwd_salt, 0, 0 };
+		passwd_salt[LINE_BUFFER_LENGTH];
+	static mypwent ent = {pwname, 0, passwd, passwd_salt, 0, 0};
 
 	/* Open file, return NULL if it failed. */
 	if ((file = fopen(MYPWENT_FILENAME, "rb")) == NULL)
+	{
 		return NULL;
+	}
 
 	/* Read each line, looking for the right entry. */
-	while (fgets(buffer, sizeof(buffer), file) != NULL) {
+	while (fgets(buffer, sizeof(buffer), file) != NULL)
+	{
 		if (sscanf(buffer, "%[^:]:%d:%[^:]:%[^:]:%d:%d", ent.pwname, &ent.uid,
-				ent.passwd, ent.passwd_salt, &ent.pwfailed, &ent.pwage) != 6)
+				   ent.passwd, ent.passwd_salt, &ent.pwfailed, &ent.pwage) != 6)
 			break;
 
-		if (strcmp(pwname, name) == 0) {
+		if (strcmp(pwname, name) == 0)
+		{
 			fclose(file);
 			return &ent;
 		}
@@ -50,11 +57,12 @@ mypwent *mygetpwnam(char *name) {
 
 /*
  Update password entry for user.
- 
+
  Upon error, or if the user couldn't be found, -1 is returned,
  otherwise 0.
  */
-int mysetpwent(char *name, mypwent *pw) {
+int mysetpwent(char *name, mypwent *pw)
+{
 	FILE *file;
 	FILE *newfile;
 	char buffer[LINE_BUFFER_LENGTH];
@@ -64,23 +72,28 @@ int mysetpwent(char *name, mypwent *pw) {
 
 	if ((file = fopen(MYPWENT_FILENAME, "rb")) == NULL)
 		return -1;
-	if ((newfile = fopen(MYPWENT_TMP_FILENAME, "wb")) == NULL) {
+	if ((newfile = fopen(MYPWENT_TMP_FILENAME, "wb")) == NULL)
+	{
 		fclose(file);
 		return -1;
 	}
 
 	/* Read each line, looking for the right entry. */
-	while (fgets(buffer, sizeof(buffer), file) != NULL) {
-		if (sscanf(buffer, "%[^:]", pwname) != 1) {
+	while (fgets(buffer, sizeof(buffer), file) != NULL)
+	{
+		if (sscanf(buffer, "%[^:]", pwname) != 1)
+		{
 			status = -1;
 			break;
 		}
 
 		/* See if we found the entry to be updated. */
-		if (strcmp(pwname, name) == 0) {
+		if (strcmp(pwname, name) == 0)
+		{
 			if (snprintf(buffer, sizeof(buffer), "%s:%d:%s:%s:%d:%d\n",
-					pw->pwname, pw->uid, pw->passwd, pw->passwd_salt,
-					pw->pwfailed, pw->pwage) >= sizeof(buffer)) {
+						 pw->pwname, pw->uid, pw->passwd, pw->passwd_salt,
+						 pw->pwfailed, pw->pwage) >= sizeof(buffer))
+			{
 				status = -1;
 				break;
 			}
@@ -88,7 +101,8 @@ int mysetpwent(char *name, mypwent *pw) {
 			status = 0;
 		}
 
-		if (fputs(buffer, newfile) < 0) {
+		if (fputs(buffer, newfile) < 0)
+		{
 			status = -1;
 			break;
 		}
@@ -98,10 +112,12 @@ int mysetpwent(char *name, mypwent *pw) {
 	fclose(file);
 
 	/* Swap files if user successfully updated. */
-	if (status == 0) {
+	if (status == 0)
+	{
 		if (rename(MYPWENT_TMP_FILENAME, MYPWENT_FILENAME) != 0)
 			status = -1;
-	} else
+	}
+	else
 		unlink(MYPWENT_TMP_FILENAME);
 
 	return status;

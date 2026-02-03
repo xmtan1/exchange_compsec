@@ -12,26 +12,30 @@
 #include <sys/types.h>
 #include <crypt.h>
 /* Uncomment next line in step 2 */
-#include "pwent.h" 
+#include "pwent.h"
 
 #define TRUE 1
 #define FALSE 0
 #define LENGTH 16
 
-void sighandler() {
+void sighandler()
+{
 
 	/* add signalhandling routines here */
 	/* see 'man 2 signal' */
 }
 
 // helper function to query username from passwd db
-int getusername(char *username);
+mypwent *matchpwd(char *username)
+{
+	return mygetpwnam(username);
+}
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
 	// using struct from file pwent.h
-	// struct mypwent *passwddata; /* this has to be redefined in step 2 */
-	/* see pwent.h */
+	mypwent *passwddata;
 
 	char important1[LENGTH] = "**IMPORTANT 1**";
 
@@ -39,13 +43,14 @@ int main(int argc, char *argv[]) {
 
 	char important2[LENGTH] = "**IMPORTANT 2**";
 
-	//char   *c_pass; //you might want to use this variable later...
+	// char   *c_pass; //you might want to use this variable later...
 	char prompt[] = "password: ";
 	char *user_pass;
 
 	sighandler();
 
-	while (TRUE) {
+	while (TRUE)
+	{
 		/* check what important variable contains - do not remove, part of buffer overflow test */
 		printf("Value of variable 'important1' before input of login name: %s\n",
 				important1);
@@ -53,15 +58,20 @@ int main(int argc, char *argv[]) {
 				important2);
 
 		printf("login: ");
-		fflush(NULL); /* Flush all  output buffers */
+		fflush(NULL);	 /* Flush all  output buffers */
 		__fpurge(stdin); /* Purge any data in stdin buffer */
 
 		// the gets function decrapped, suggested to change to fgets
 		// if (gets(user) == NULL) /* gets() is vulnerable to buffer */
 		// 	exit(0); /*  overflow attacks.  */
-		if (fgets(user, sizeof(user), stdin) == NULL) {
+		if (fgets(user, sizeof(user), stdin) == NULL)
+		{
 			exit(0); // temp exit, have not been implemented yet
 		}
+		
+		// workaround since the input contains \n (newline)
+		// and string must be ended with \0 (null terminated)
+		user[strcspn(user, "\n")] = 0;
 
 		/* check to see if important variable is intact after input of login name - do not remove */
 		printf("Value of variable 'important 1' after input of login name: %*.*s\n",
@@ -88,24 +98,17 @@ int main(int argc, char *argv[]) {
 		// 		/*  start a shell, use execve(2) */
 
 		// 	}
-		// 
-		if(getusername(user) == 0){
-			printf("There is no entry in the DB matched with this user.\n");
-		} else {
-			printf("Matched user...\n");
-			printf("%s\n", user_pass);
+		//
+
+		// save the result into a struct
+		passwddata = matchpwd(user);
+		if (strcmp(passwddata->passwd, user_pass) == 0){
+			printf("[SUCCESS] You're in !\n");
+			printf("[CHECK] The user's UID is: %d\n", passwddata->uid);
 		}
+
+
 		printf("Login Incorrect \n");
 	}
 	return 0;
-}
-
-int getusername(char *username){
-	mypwent *resent;
-
-	resent = mygetpwnam(username);
-	if (resent == NULL){
-		return 0;
-	}
-	return 1;
 }
