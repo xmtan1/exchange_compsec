@@ -12,3 +12,4 @@ data-privacy/*/__pycache__/*
 *.pem
 
 computer-security/lab/lab-1/*
+computer-security/lab/lab-2/passdb
