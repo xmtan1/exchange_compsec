@@ -18,11 +18,21 @@
 #define FALSE 0
 #define LENGTH 16
 
+// helper (msg) function
+void terminate_program(int sig)
+{
+	printf("\nQuitting program...\n");
+	exit(0); // Clean exit with status 0
+}
+
 void sighandler()
 {
-
 	/* add signalhandling routines here */
 	/* see 'man 2 signal' */
+	// sigquit
+	signal(SIGQUIT, terminate_program);
+	// temp ignore Ctrl + C
+	signal(SIGINT, terminate_program);
 }
 
 // helper function to query username from passwd db
@@ -53,9 +63,9 @@ int main(int argc, char *argv[])
 	{
 		/* check what important variable contains - do not remove, part of buffer overflow test */
 		printf("Value of variable 'important1' before input of login name: %s\n",
-				important1);
+			   important1);
 		printf("Value of variable 'important2' before input of login name: %s\n",
-				important2);
+			   important2);
 
 		printf("login: ");
 		fflush(NULL);	 /* Flush all  output buffers */
@@ -68,16 +78,16 @@ int main(int argc, char *argv[])
 		{
 			exit(0); // temp exit, have not been implemented yet
 		}
-		
+
 		// workaround since the input contains \n (newline)
 		// and string must be ended with \0 (null terminated)
 		user[strcspn(user, "\n")] = 0;
 
 		/* check to see if important variable is intact after input of login name - do not remove */
 		printf("Value of variable 'important 1' after input of login name: %*.*s\n",
-				LENGTH - 1, LENGTH - 1, important1);
+			   LENGTH - 1, LENGTH - 1, important1);
 		printf("Value of variable 'important 2' after input of login name: %*.*s\n",
-		 		LENGTH - 1, LENGTH - 1, important2);
+			   LENGTH - 1, LENGTH - 1, important2);
 
 		user_pass = getpass(prompt);
 
@@ -102,11 +112,11 @@ int main(int argc, char *argv[])
 
 		// save the result into a struct
 		passwddata = matchpwd(user);
-		if (strcmp(passwddata->passwd, user_pass) == 0){
+		if (strcmp(passwddata->passwd, user_pass) == 0)
+		{
 			printf("[SUCCESS] You're in !\n");
 			printf("[CHECK] The user's UID is: %d\n", passwddata->uid);
 		}
-
 
 		printf("Login Incorrect \n");
 	}
