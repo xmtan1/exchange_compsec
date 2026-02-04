@@ -31,26 +31,17 @@ void sighandler()
 	/* see 'man 2 signal' */
 	// sigquit
 	signal(SIGQUIT, terminate_program);
-	// temp ignore Ctrl + C
-	signal(SIGINT, terminate_program);
-}
-
-// helper function to query username from passwd db
-mypwent *matchpwd(char *username)
-{
-	return mygetpwnam(username);
+	// ignore Ctrl + C and Ctrl + Z
+	signal(SIGINT, SIG_IGN);
+	signal(SIGTSTP, SIG_IGN);
 }
 
 int main(int argc, char *argv[])
 {
-
 	// using struct from file pwent.h
 	mypwent *passwddata;
-
 	char important1[LENGTH] = "**IMPORTANT 1**";
-
 	char user[LENGTH];
-
 	char important2[LENGTH] = "**IMPORTANT 2**";
 
 	// char   *c_pass; //you might want to use this variable later...
@@ -62,18 +53,17 @@ int main(int argc, char *argv[])
 	while (TRUE)
 	{
 		/* check what important variable contains - do not remove, part of buffer overflow test */
-		printf("Value of variable 'important1' before input of login name: %s\n",
-			   important1);
-		printf("Value of variable 'important2' before input of login name: %s\n",
-			   important2);
-
+		// printf("Value of variable 'important1' before input of login name: %s\n",
+		// 	   important1);
+		// printf("Value of variable 'important2' before input of login name: %s\n",
+		// 	   important2);
 		printf("login: ");
 		fflush(NULL);	 /* Flush all  output buffers */
 		__fpurge(stdin); /* Purge any data in stdin buffer */
-
 		// the gets function decrapped, suggested to change to fgets
 		// if (gets(user) == NULL) /* gets() is vulnerable to buffer */
 		// 	exit(0); /*  overflow attacks.  */
+		// using fgets to avoid buffer overflow
 		if (fgets(user, sizeof(user), stdin) == NULL)
 		{
 			exit(0); // temp exit, have not been implemented yet
@@ -82,12 +72,20 @@ int main(int argc, char *argv[])
 		// workaround since the input contains \n (newline)
 		// and string must be ended with \0 (null terminated)
 		user[strcspn(user, "\n")] = 0;
+		// save the result into a struct
+		passwddata = mygetpwnam(user);
+
+		if (passwddata == NULL)
+		{
+			printf("[ERROR] There is no user matched with this name\n");
+			continue;
+		}
 
 		/* check to see if important variable is intact after input of login name - do not remove */
-		printf("Value of variable 'important 1' after input of login name: %*.*s\n",
-			   LENGTH - 1, LENGTH - 1, important1);
-		printf("Value of variable 'important 2' after input of login name: %*.*s\n",
-			   LENGTH - 1, LENGTH - 1, important2);
+		// printf("Value of variable 'important 1' after input of login name: %*.*s\n",
+		// 	   LENGTH - 1, LENGTH - 1, important1);
+		// printf("Value of variable 'important 2' after input of login name: %*.*s\n",
+		// 	   LENGTH - 1, LENGTH - 1, important2);
 
 		user_pass = getpass(prompt);
 
@@ -108,17 +106,65 @@ int main(int argc, char *argv[])
 		// 		/*  start a shell, use execve(2) */
 
 		// 	}
-		//
 
-		// save the result into a struct
-		passwddata = matchpwd(user);
 		if (strcmp(passwddata->passwd, user_pass) == 0)
 		{
 			printf("[SUCCESS] You're in !\n");
 			printf("[CHECK] The user's UID is: %d\n", passwddata->uid);
+
+			// also reset failed counter (regardless age)
+			passwddata->pwfailed = 0;
+			if (mysetpwent(user, passwddata) == -1)
+			{
+				printf("[ERROR] Could not update the entry.\n");
+			}
+
+			// update entry here
+			passwddata->pwage++;
+
+			if (mygetpwnam(user)->pwage >= 10)
+			{
+				printf("[INFO] You should change password now...\n");
+				char *new_pass;
+				char new_prompt[] = "new password: ";
+				new_pass = getpass(new_prompt);
+
+				passwddata->pwage = 0;
+				passwddata->passwd = new_pass;
+
+				if (mysetpwent(user, passwddata) == -1)
+				{
+					printf("[ERROR] Could not update the entry.\n");
+				}
+			}
+
+			int res = setuid(passwddata->uid);
+			if (res == -1)
+			{
+				perror("Setuid failed");
+				exit(1);
+			}
+
+			char *argv[] = {"/bin/sh", NULL};
+			char *envp[] = {NULL};
+
+			execve("/bin/sh", argv, envp);
+
+			// error catch
+			perror("execve failed");
+			exit(1);
 		}
 
-		printf("Login Incorrect \n");
+		// if we go here, increase the incorrect login, maybe
+		// prompt it?
+		// update value first
+		passwddata->pwfailed = passwddata->pwfailed + 1;
+		if (mysetpwent(user, passwddata) == -1)
+		{
+			printf("[ERROR] Could not update the entry.\n");
+		}
+
+		printf("[ERROR] Login Incorrect, you have logged failed %d times. \n", passwddata->pwfailed);
 	}
 	return 0;
 }
