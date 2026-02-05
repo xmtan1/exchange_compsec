@@ -22,6 +22,8 @@ void receiver(App *self, int c)
   SCI_WRITE(&sci0, msg.buff);
 }
 
+// due to buffer error and some ghoslty 
+// result, best way to display is string
 void int_to_str(int n, char *str)
 {
   int i = 0, is_negative = 0;
@@ -53,6 +55,8 @@ void int_to_str(int n, char *str)
   }
 }
 
+// old debug method, caused ghosly
+// and garbage display
 void debugNumber(App *self)
 {
   SCI_WRITE(&sci0, "\nArray: ");
@@ -64,6 +68,7 @@ void debugNumber(App *self)
   SCI_WRITE(&sci0, "\n");
 }
 
+// median method
 int calculateMedian(App *self)
 {
   int a = self->history[0];
@@ -88,6 +93,7 @@ void reader(App *self, int c)
 
   if (c == 'F')
   {
+    // handle flush case
     // debugNumber(self);
     SCI_WRITE(&sci0, "\nRcv: 'F'\n");
     for (int i = 0; i < 3; i++)
@@ -104,6 +110,7 @@ void reader(App *self, int c)
     int value = atoi(self->number);
 
     // for history count
+    // not test the sequence yet!!!
     self->history[self->count % 3] = value;
     self->count++;
 
@@ -130,13 +137,17 @@ void reader(App *self, int c)
   }
   else if (self->pos < 1)
   {
+    // only accept 1 character at a time
     self->buffer[0] = (char)c;
     self->buffer[1] = '\0';
 
     SCI_WRITE(&sci0, "\nRcv: '");
-    SCI_WRITE(&sci0, self->buffer);
+    // SCI_WRITE(&sci0, self->buffer);
+    // actually use write char is a good one...
+    SCI_WRITECHAR(&sci0, c);
     SCI_WRITE(&sci0, "'\n");
 
+    // hanlde the number
     if (self->num_pos < 63)
     {
       self->number[self->num_pos++] = (char)c;
@@ -146,6 +157,7 @@ void reader(App *self, int c)
   }
   else
   {
+    // cannot reach here, only error can make it to this point
     SCI_WRITE(&sci0, "\nError: Only 1 char allowed!\n");
   }
 }
