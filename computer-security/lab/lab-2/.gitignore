@@ -1,0 +1,11 @@
+# Executables
+login_linux
+makepass
+pwent
+
+# Database files
+passdb
+passdb.tmp
+
+# Object files
+*.o
