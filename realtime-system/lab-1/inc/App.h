@@ -5,12 +5,16 @@
 
 typedef struct {
   Object super;
-  char buffer[64];
+  char buffer[2];
+  char number[64];
   int pos;
+  int num_pos;
+  int history[3];
+  int count;
 } App;
 
 #define initApp()                                                              \
-  { initObject(), {0}, 0 }
+  { initObject(), {0}, {0}, 0, 0, {0}, 0 }
 
 void reader(App *, int);
 void receiver(App *, int);
