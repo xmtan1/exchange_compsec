@@ -1,4 +1,6 @@
-/* $Header: https://svn.ita.chalmers.se/repos/security/edu/course/computer_security/trunk/lab/login_linux/pwent.h 586 2013-01-19 10:32:53Z pk@CHALMERS.SE $ */
+/* $Header:
+ * https://svn.ita.chalmers.se/repos/security/edu/course/computer_security/trunk/lab/login_linux/pwent.h
+ * 586 2013-01-19 10:32:53Z pk@CHALMERS.SE $ */
 
 /* pwent.h - Password entry header file */
 
@@ -31,20 +33,37 @@
 #ifndef PWENT_H
 #define PWENT_H
 
-/* Names of password files. */
-#define MYPWENT_FILENAME     "passdb"
-#define MYPWENT_TMP_FILENAME "passdb.tmp"
+/* Definition for the database */
+#define DATABASE_FILENAME "passdb"
+#define DATABASE_TMP_FILENAME "passdb.tmp"
+// A string column in the database should only be 1000 ascii characters long
+#define DATABASE_STRING_LENGTH (sizeof(char) * 1000)
+#define DATABASE_PASSWORD_SALT_LENGTH (sizeof(char) * 100)
+
+// The entry should be three strings, and three integers as per the definition
+// below.
+#define DATABASE_ENTRY_LENGTH (DATABASE_STRING_LENGTH * 3 + sizeof(int) * 3)
+
+// Format of an entry is:
+// "username:userID:password:passwordSalt:attemptsFailed:passwordAge"
+#define DATABASE_ENTRY_SCAN_FORMAT "%[^:]:%d:%[^:]:%[^:]:%d:%d"
+#define DATABASE_ENTRY_SET_FORMAT "%s:%d:%s:%s:%d:%d\n"
 
 typedef struct {
-	char *pwname; /* Username */
-	int uid; /* User id */
-	char *passwd; /* Password */
-	char *passwd_salt; /* Make dictionary attack harder */
-	int pwfailed; /* No. of failed attempts */
-	int pwage; /* Age of password in no of logins */
-} mypwent;
+  char *name;         /* Username */
+  int uid;            /* User id */
+  char *password;     /* Password */
+  char *passwordSalt; /* Make dictionary attack harder */
+  int attemptsFailed; /* No. of failed attempts */
+  int passwordAge;    /* Age of password in no of logins */
+} databaseEntry;
 
-mypwent *mygetpwnam(char *name); /* Find entry matching username */
-int mysetpwent(char *name, mypwent *pw); /* Set entry based on username */
+databaseEntry *getDatabaseEntry(char *name); /* Find entry matching username */
+int updateDatabaseEntry(
+    char *name,
+    databaseEntry *newDatabaseEntry); /* Set entry based on username */
+int appendDatabaseEntry(
+    char *name, int uid,
+    char *password); // Append entry to the end of the database
 
 #endif
