@@ -130,9 +130,14 @@ int appendDatabaseEntry(char *name, int uid, char *password) {
     return -1;
 
   // Create pseudo-random password salt
-  char *passwordSalt = (char *)malloc(DATABASE_PASSWORD_SALT_LENGTH);
+  int saltSize = 3 + DATABASE_PASSWORD_SALT_LENGTH;
+  char *passwordSalt = (char *)malloc(saltSize);
 
-  for (int i = 0; i < DATABASE_PASSWORD_SALT_LENGTH / sizeof(char); i++) {
+  passwordSalt[0] = '$';
+  passwordSalt[1] = '6';
+  passwordSalt[2] = '$';
+
+  for (int i = 3; i < saltSize; i++) {
     // Create a salt where each character is between 'A-Z' or 'a-z' randomly
     if (random() % 2)
       passwordSalt[i] = 'A' + random() % 26;
@@ -140,7 +145,11 @@ int appendDatabaseEntry(char *name, int uid, char *password) {
       passwordSalt[i] = 'a' + random() % 26;
   }
 
-  databaseEntry newDatabaseEntry = {name, uid, password, passwordSalt, 0, 0};
+  // Encrypt the plain password
+  char *encryptedPassword = crypt(password, passwordSalt);
+
+  databaseEntry newDatabaseEntry = {name,         uid, encryptedPassword,
+                                    passwordSalt, 0,   0};
 
   // Append the entry to the end of the database.
   if (snprintf(entryBuffer, sizeof(entryBuffer), DATABASE_ENTRY_SET_FORMAT,

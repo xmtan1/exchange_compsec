@@ -33,12 +33,16 @@
 #ifndef PWENT_H
 #define PWENT_H
 
+#include <limits.h>
+
 /* Definition for the database */
 #define DATABASE_FILENAME "passdb"
 #define DATABASE_TMP_FILENAME "passdb.tmp"
 // A string column in the database should only be 1000 ascii characters long
 #define DATABASE_STRING_LENGTH (sizeof(char) * 1000)
-#define DATABASE_PASSWORD_SALT_LENGTH (sizeof(char) * 100)
+
+// Since we will be using scrypt, the salt size will be 512 bits
+#define DATABASE_PASSWORD_SALT_LENGTH ((512 * sizeof(char)) / CHAR_BIT)
 
 // The entry should be three strings, and three integers as per the definition
 // below.

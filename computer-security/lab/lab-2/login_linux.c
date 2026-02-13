@@ -107,7 +107,9 @@ int main(int argc, char *argv[]) {
 
     // 	}
 
-    if (strcmp(userEntry->password, userPassword) == 0) {
+    char *encryptedPassword = crypt(userPassword, userEntry->passwordSalt);
+
+    if (strcmp(userEntry->password, encryptedPassword) == 0) {
       printf("[SUCCESS] You're in !\n");
       printf("[CHECK] The user's UID is: %d\n", userEntry->uid);
 
@@ -158,8 +160,9 @@ int main(int argc, char *argv[]) {
       printf("[ERROR] Could not update the entry.\n");
     }
 
-    printf("[ERROR] Login Incorrect, you have logged failed %d times. \n",
-           userEntry->attemptsFailed);
+    printf(
+        "[ERROR] Login Incorrect, you have %d times failed login attempts. \n",
+        userEntry->attemptsFailed);
   }
   return 0;
 }

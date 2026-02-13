@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
     if ((uidInt = atoi((char *)uid)) == 0 && uid[0] != '0') {
       // Since atoi errors returns an integer 0, but if the string wasn't 0 it
       // means an error has happened
-      printf("[ERROR] Invalid uid...");
+      printf("[ERROR] Invalid uid...\n");
       continue;
     }
 
