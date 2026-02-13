@@ -9,7 +9,6 @@
 #include "pwent.h"
 #include <crypt.h>
 #include <pwd.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdio_ext.h>
 #include <stdlib.h>
@@ -19,13 +18,12 @@
 
 #define TRUE 1
 #define FALSE 0
-#define LENGTH 16
 
 int main(int argc, char *argv[]) {
   // using struct from file pwent.h
   databaseEntry *userEntry;
-  char name[LENGTH];
-  char uid[sizeof(int) * 8]; // How big an int can be character wise
+  char name[DATABASE_STRING_LENGTH];
+  char uid[DATABASE_STRING_LENGTH]; // How big an int can be character wise
   char *password;
   char *confirmPassword;
 
@@ -53,7 +51,13 @@ int main(int argc, char *argv[]) {
     if (fgets(uid, sizeof(uid), stdin) == NULL) {
       exit(0); // temp exit, have not been implemented yet
     }
-    int uidInt = atoi((char *)uid);
+    int uidInt;
+    if ((uidInt = atoi((char *)uid)) == 0 && uid[0] != '0') {
+      // Since atoi errors returns an integer 0, but if the string wasn't 0 it
+      // means an error has happened
+      printf("[ERROR] Invalid uid...");
+      continue;
+    }
 
     // Get password
     password = getpass("Password: ");
@@ -70,6 +74,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("[SUCCESS] User registered correctly!\n");
+    break;
   }
   return 0;
 }
