@@ -115,12 +115,15 @@ int main(int argc, char *argv[]) {
 
       // also reset failed counter (regardless age)
       userEntry->attemptsFailed = 0;
+      // update password age
+      userEntry->passwordAge++;
+
       if (updateDatabaseEntry(user, userEntry) == -1) {
         printf("[ERROR] Could not update the entry.\n");
       }
 
       // update entry here
-      userEntry->passwordAge++;
+      // userEntry->passwordAge++;
 
       if (getDatabaseEntry(user)->passwordAge >= 10) {
         printf("[INFO] You should change password now...\n");
