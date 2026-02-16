@@ -79,6 +79,13 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
+    // soft lock
+    if (userEntry->attemptsFailed >= 3) { 
+        printf("[ERROR] Account locked due to too many failed attempts.\n");
+        printf("[INFO] Please contact the administrator.\n");
+        continue; // trap in loop
+    }
+
     /* check to see if important variable is intact after input of login name -
      * do not remove */
     // printf("Value of variable 'important 1' after input of login name:
