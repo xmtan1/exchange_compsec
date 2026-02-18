@@ -19,6 +19,9 @@
 #define TRUE 1
 #define FALSE 0
 #define LENGTH 16
+#define DEBUG 0
+
+void incorrect_login() { printf("[ERROR] Invalid credentials!"); }
 
 // helper (msg) function
 void terminate_program(int sig) {
@@ -39,12 +42,11 @@ void sighandler() {
 int main(int argc, char *argv[]) {
   // using struct from file pwent.h
   databaseEntry *userEntry;
-  char important1[LENGTH] = "**IMPORTANT 1**";
+  // char important1[LENGTH] = "**IMPORTANT 1**";
   char user[LENGTH];
-  char important2[LENGTH] = "**IMPORTANT 2**";
+  // char important2[LENGTH] = "**IMPORTANT 2**";
 
-  // char   *c_pass; //you might want to use this variable later...
-  char prompt[] = "password: ";
+  char prompt[] = "Password: ";
   char *userPassword;
 
   sighandler();
@@ -56,13 +58,14 @@ int main(int argc, char *argv[]) {
     // 	   important1);
     // printf("Value of variable 'important2' before input of login name: %s\n",
     // 	   important2);
-    printf("login: ");
+    printf("----- LOGIN -----\n");
     fflush(NULL);    /* Flush all  output buffers */
     __fpurge(stdin); /* Purge any data in stdin buffer */
     // the gets function decrapped, suggested to change to fgets
     // if (gets(user) == NULL) /* gets() is vulnerable to buffer */
     // 	exit(0); /*  overflow attacks.  */
     // using fgets to avoid buffer overflow
+    printf("Username: ");
     if (fgets(user, sizeof(user), stdin) == NULL) {
       exit(0); // temp exit, have not been implemented yet
     }
@@ -70,21 +73,6 @@ int main(int argc, char *argv[]) {
     // workaround since the input contains \n (newline)
     // and string must be ended with \0 (null terminated)
     user[strcspn(user, "\n")] = 0;
-
-    // save the result into a struct
-    userEntry = getDatabaseEntry(user);
-
-    if (userEntry == NULL) {
-      printf("[ERROR] There is no user matched with this name\n");
-      continue;
-    }
-
-    // soft lock
-    if (userEntry->attemptsFailed >= 3) { 
-        printf("[ERROR] Account locked due to too many failed attempts.\n");
-        printf("[INFO] Please contact the administrator.\n");
-        continue; // trap in loop
-    }
 
     /* check to see if important variable is intact after input of login name -
      * do not remove */
@@ -114,11 +102,28 @@ int main(int argc, char *argv[]) {
 
     // 	}
 
+    // save the result into a struct
+    userEntry = getDatabaseEntry(user);
+
+    if (userEntry == NULL) {
+      printf("[ERROR] Invalid credentials.\n");
+      continue;
+    }
+
+    // soft lock
+    if (userEntry->attemptsFailed >= 3) {
+      printf("[ERROR] Account locked due to too many failed attempts.\n");
+      printf("[ERROR] Please contact the administrator.\n");
+      continue; // trap in loop
+    }
+
     char *encryptedPassword = crypt(userPassword, userEntry->passwordSalt);
 
     if (strcmp(userEntry->password, encryptedPassword) == 0) {
-      printf("[SUCCESS] You're in !\n");
-      printf("[CHECK] The user's UID is: %d\n", userEntry->uid);
+      printf("[INFO] Successful login!\n");
+
+      if (DEBUG == 1)
+        printf("[DEBUG] The user's UID is: %d\n", userEntry->uid);
 
       // also reset failed counter (regardless age)
       userEntry->attemptsFailed = 0;
@@ -170,9 +175,10 @@ int main(int argc, char *argv[]) {
       printf("[ERROR] Could not update the entry.\n");
     }
 
-    printf(
-        "[ERROR] Login Incorrect, you have %d times failed login attempts. \n",
-        userEntry->attemptsFailed);
+    printf("[ERROR] Invalid credentials.\n");
+    if (DEBUG == 1)
+      printf("[DEBUG] You have %d times failed login attempts.\n",
+             userEntry->attemptsFailed);
   }
   return 0;
 }
