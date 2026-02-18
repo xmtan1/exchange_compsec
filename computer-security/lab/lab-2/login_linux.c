@@ -22,6 +22,7 @@
 #define DEBUG 0
 
 void incorrect_login() { printf("[ERROR] Invalid credentials!"); }
+void missing_name() { printf("[ERROR] Missing user name!"); }
 
 // helper (msg) function
 void terminate_program(int sig) {
@@ -67,6 +68,10 @@ int main(int argc, char *argv[]) {
     // using fgets to avoid buffer overflow
     printf("Username: ");
     if (fgets(user, sizeof(user), stdin) == NULL) {
+      if (DEBUG == 1){
+        missing_name();
+      }
+      // continue;
       exit(0); // temp exit, have not been implemented yet
     }
 
@@ -112,8 +117,10 @@ int main(int argc, char *argv[]) {
 
     // soft lock
     if (userEntry->attemptsFailed >= 3) {
-      printf("[ERROR] Account locked due to too many failed attempts.\n");
-      printf("[ERROR] Please contact the administrator.\n");
+      // printf("[ERROR] Account locked due to too many failed attempts.\n");
+      // printf("[ERROR] Please contact the administrator.\n");
+      // change message to avoid user "scaning" attack
+      printf("[ERROR] Invalid credentials.\n");
       continue; // trap in loop
     }
 
