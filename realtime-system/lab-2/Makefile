@@ -5,17 +5,17 @@ SPACE := $(null) $(null)
 APP_NAME = $(notdir $(subst $(SPACE),-,$(CURDIR)))
 
 # output files
+BUILD_DIR = build
 TARGET_ELF = $(BUILD_DIR)/$(APP_NAME).elf
 TARGET_S19 = $(BUILD_DIR)/$(APP_NAME).s19
 
-# linker script
+# linker script (Assumed to be in lab-2/ based on your tree)
 LINKER_SCRIPT = md407-ram.x
 
-# source directories
-BUILD_DIR = build
+# Updated source directories relative to lab-2/
 OBJ_DIR = $(BUILD_DIR)/obj
 SRC_DIRS = src lib/tinytimber/src lib/md407/src
-INC_DIRS = $(SRC_DIRS:src=inc)
+INC_DIRS = inc lib/tinytimber/inc lib/md407/inc
 OBJ_DIRS = $(addprefix $(OBJ_DIR)/, $(SRC_DIRS))
 
 # source files
@@ -28,22 +28,24 @@ CC = "$(GCC_PATH)arm-none-eabi-gcc"
 OBJCOPY = "$(GCC_PATH)arm-none-eabi-objcopy"
 
 # compiler, linker, and generator flags
+# -I flags added for header files
 CFLAGS += -O0 \
-		  -Wall \
-		  -MMD \
-		  -mcpu=cortex-m4 \
-		  -mfpu=fpv4-sp-d16 \
-		  -mthumb \
-		  -mfloat-abi=hard \
-		  -D STM32F40_41xxx \
-		  $(addprefix -I, $(INC_DIRS))
+          -Wall \
+          -MMD \
+          -mcpu=cortex-m4 \
+          -mfpu=fpv4-sp-d16 \
+          -mthumb \
+          -mfloat-abi=hard \
+          -D STM32F40_41xxx \
+          $(addprefix -I, $(INC_DIRS))
+
 LDFLAGS += -nostartfiles \
-		   -specs=nano.specs \
-		   -mcpu=cortex-m4 \
-		   -mfpu=fpv4-sp-d16 \
-		   -mthumb \
-		   -mfloat-abi=hard \
-		   -T $(LINKER_SCRIPT)
+           -specs=nano.specs \
+           -mcpu=cortex-m4 \
+           -mfpu=fpv4-sp-d16 \
+           -mthumb \
+           -mfloat-abi=hard \
+           -T $(LINKER_SCRIPT)
 OBJCOPY_FLAGS += -S -O srec
 
 # compiler, standard, local, and math libraries
@@ -51,10 +53,11 @@ LDLIBS += -lgcc -lc_nano -lm
 
 # directory commands
 ifeq ($(OS), Windows_NT)
-	MKDIR = powershell mkdir -Force
-	RM = powershell rm -Force
+    MKDIR = powershell mkdir -Force
+    RM = powershell rm -Force
 else
-	MKDIR = mkdir -p
+    MKDIR = mkdir -p
+    RM = rm -f
 endif
 
 # main target
@@ -82,7 +85,7 @@ $(OBJ_DIR)/%.o: %
 clean:
 	$(RM) -r $(BUILD_DIR)
 
-# communicate with MD407 (non-IDE users on Linux/MacOS)
+# communicate with MD407
 console: $(TARGET_S19)
 	bin/$@ $<
 

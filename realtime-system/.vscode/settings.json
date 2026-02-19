@@ -3,12 +3,19 @@
     "*.s": "arm"
   },
   "errorLens.messageBackgroundMode": "line",
+  // Updated include paths based on your lab-2 directory structure
   "C_Cpp.default.includePath": [
-    "${workspaceFolder}/inc",
-    "${workspaceFolder}/lib/md407/inc",
-    "${workspaceFolder}/lib/tinytimber/inc"
+    "${workspaceFolder}/lab-2/inc",
+    "${workspaceFolder}/lab-2/lib/md407/inc",
+    "${workspaceFolder}/lab-2/lib/tinytimber/inc"
   ],
   "C_Cpp.default.intelliSenseMode": "gcc-arm",
-  "C_Cpp.errorSquiggles": "disabled",
-  "mdx07-templates.appName": "realtime-system"
+  // Enabled errorSquiggles so Error Lens has data to display
+  "C_Cpp.errorSquiggles": "enabled",
+  "mdx07-templates.appName": "realtime-system",
+  // Suggested addition for Error Lens clarity
+  "errorLens.exclude": [
+    "**/node_modules/**"
+  ],
+  "errorLens.fontStyle": "italic"
 }
